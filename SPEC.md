@@ -2,45 +2,70 @@
 
 ## Executive Summary
 
-[Brief overview of the project, its purpose, and value proposition]
+Granola CLI is a command-line tool that enables users to export their notes from
+the Granola note-taking application to local Markdown files. The tool provides
+a simple, efficient way to backup, migrate, or work with Granola notes outside
+the application while preserving all metadata and formatting.
 
 ## Project Overview
 
 ### Problem Statement
 
-[Describe the problem this project aims to solve]
+Users of the Granola note-taking application need a way to export their notes
+for backup, migration, or offline access. Currently, notes are only accessible
+through the Granola application, limiting users' ability to work with their
+content in other tools or preserve it locally.
 
 ### Solution
 
-[High-level description of the proposed solution]
+A command-line tool that connects to the Granola API, authenticates using
+bearer tokens, fetches all user notes in JSON format, and converts them to
+clean, readable Markdown files with preserved metadata.
 
 ### Goals and Objectives
 
-- [ ] Primary goal 1
-- [ ] Primary goal 2
-- [ ] Secondary objective 1
-- [ ] Secondary objective 2
+- [ ] Export all notes from Granola API to local Markdown files
+- [ ] Preserve note metadata (creation date, tags, etc.) in exports
+- [ ] Provide simple, secure authentication via bearer tokens
+- [ ] Support batch export of all notes in a single command
+- [ ] Create well-organized file structure for exported notes
+- [ ] Incremental exports (only new notes)
 
 ### Success Criteria
 
-[Define what success looks like for this project]
+- Successfully exports 100% of user notes from Granola API
+- Maintains data integrity during conversion (no content loss)
+- Preserves all metadata in a standard format (YAML frontmatter)
+- Completes export process efficiently (< 1 minute for 1000 notes)
+- Produces valid, readable Markdown files compatible with common editors
 
 ## Scope
 
 ### In Scope
 
-- Feature/requirement 1
-- Feature/requirement 2
-- Feature/requirement 3
+- Bearer token authentication with Granola API
+- Fetching all notes via API endpoints
+- JSON to Markdown conversion
+- Metadata preservation in YAML frontmatter
+- Configurable output directory
+- Error handling and retry logic
+- Debug mode for troubleshooting
 
 ### Out of Scope
 
-- Explicitly excluded feature 1
-- Explicitly excluded feature 2
+- Two-way synchronization with Granola
+- Selective note export (filtering)
+- Real-time export/watch mode
+- Export to formats other than Markdown
+- Note editing or modification capabilities
 
 ### Future Considerations
 
-[Features or improvements to consider for future iterations]
+- Support for modified note exports
+- Export filtering by date, tags, or categories
+- Multiple export formats (HTML, PDF, etc.)
+- Integration with other note-taking tools
+- Scheduled/automated exports
 
 ## Requirements
 
@@ -48,51 +73,95 @@
 
 #### Core Features
 
-1. **Feature Name**
-   - Description
-   - Acceptance criteria
-   - Priority: [High/Medium/Low]
+1. **API Authentication**
+   - Secure authentication using bearer tokens
+   - Token configuration via environment variables or config file
+   - Validation of token before API calls
+   - Priority: High
 
-2. **Feature Name**
-   - Description
-   - Acceptance criteria
-   - Priority: [High/Medium/Low]
+2. **Note Export**
+   - Fetch all notes from Granola API
+   - Parse JSON response data
+   - Handle pagination if required
+   - Priority: High
+
+3. **Markdown Conversion**
+   - Convert JSON note data to Markdown format
+   - Preserve note content and formatting
+   - Add metadata as YAML frontmatter
+   - Priority: High
+
+4. **File Management**
+   - Create output directory structure
+   - Generate appropriate filenames
+   - Handle duplicate names
+   - Write files to disk
+   - Priority: High
 
 ### Non-Functional Requirements
 
 #### Performance
 
-- Response time requirements
-- Throughput requirements
-- Resource usage constraints
+- Export 1000 notes in under 60 seconds
+- Efficient memory usage for large note collections
+- Concurrent API requests where applicable
+- Minimal CPU overhead during conversion
 
 #### Security
 
-- Authentication requirements
-- Authorization requirements
-- Data protection requirements
+- Secure storage of bearer tokens (environment variables)
+- No token logging in debug output
+- HTTPS-only API communication
+- No sensitive data in configuration files
 
 #### Usability
 
-- User interface requirements
-- Accessibility requirements
-- Documentation requirements
+- Simple command-line interface
+- Clear error messages and feedback
+- Progress indicators for long operations
+- Comprehensive help documentation
+- Configuration via multiple sources (env, config, flags)
 
 #### Reliability
 
-- Availability requirements
-- Error handling requirements
-- Recovery requirements
+- Graceful handling of API errors
+- Automatic retry for transient failures
+- Partial export recovery (resume from failure)
+- Data integrity verification
+- Clear error reporting with actionable messages
 
 ## Technical Architecture
 
 ### System Architecture
 
-[High-level system design and component interaction]
+```
+┌─────────────┐     ┌──────────────┐     ┌─────────────┐
+│   CLI       │────▶│ API Client   │────▶│ Granola API │
+│  (Cobra)    │     │ (HTTP/Auth)  │     │   (JSON)    │
+└─────────────┘     └──────────────┘     └─────────────┘
+       │                    │
+       │                    ▼
+       │            ┌──────────────┐
+       │            │ JSON Parser  │
+       │            │   (Models)   │
+       │            └──────────────┘
+       │                    │
+       │                    ▼
+       │            ┌──────────────┐
+       └───────────▶│  Converter   │
+                    │ (MD Generator)│
+                    └──────────────┘
+                            │
+                            ▼
+                    ┌──────────────┐
+                    │ File System  │
+                    │   (Export)   │
+                    └──────────────┘
+```
 
 ### Technology Stack
 
-- **Language**: Go
+- **Language**: Go 1.23.1+
 - **Framework**: Cobra (CLI framework)
 - **Configuration**: Viper (TOML config files, environment variables, flags)
 - **Logging**: Charmbracelet/log (structured logging with caller and timestamp)
@@ -100,91 +169,170 @@
 - **Key Libraries**:
   - charmbracelet/fang: Enhanced command execution with context
   - godotenv: .env file support for local development
+  - net/http: HTTP client for API communication
+  - encoding/json: JSON parsing and serialization
+  - gopkg.in/yaml.v3: YAML frontmatter generation
 
 ### Data Model
 
-[Description of data structures, schemas, and relationships]
+#### Note Structure (JSON from API)
+```json
+{
+  "id": "string",
+  "title": "string",
+  "content": "string",
+  "created_at": "ISO8601 timestamp",
+  "updated_at": "ISO8601 timestamp",
+  "tags": ["string"],
+  "metadata": {
+    "key": "value"
+  }
+}
+```
+
+#### Markdown Output Format
+```markdown
+---
+id: note-id
+created: 2024-01-01T00:00:00Z
+updated: 2024-01-01T00:00:00Z
+tags: [tag1, tag2]
+---
+
+# Note Title
+
+Note content in Markdown format...
+```
 
 ### API Design
 
-[If applicable, describe API endpoints, methods, and contracts]
+#### Granola API Endpoints
+
+**Authentication**
+- Header: `Authorization: Bearer <token>`
+
+**Get All Notes**
+- Endpoint: `GET /api/notes`
+- Response: JSON array of note objects
+- Pagination: Handle via query parameters if needed
+
+**Error Responses**
+- 401: Invalid or missing authentication token
+- 429: Rate limit exceeded
+- 500: Server error
 
 ## User Interface
 
 ### Command-Line Interface
 
-[For CLI applications: command structure, flags, and options]
+```bash
+# Main command
+granola [global-flags] <command> [command-flags]
+
+# Global Flags
+--config string   Config file path (default: $HOME/.config.toml)
+--debug          Enable debug logging
+--help           Show help
+
+# Export Command
+granola export [flags]
+
+# Export Flags
+--output string   Output directory (default: ./exports)
+--token string    Granola API token (overrides env/config)
+--api-url string  Granola API URL (default: https://api.granola.app)
+```
 
 ### Terminal User Interface
 
-[For TUI applications: screen layouts and navigation]
+Not applicable - this is a CLI-only tool with no interactive TUI components.
 
 ## Testing Strategy
 
 ### Testing Approach
 
-- Unit testing
-- Integration testing
-- End-to-end testing
-- Performance testing
+- **Unit testing**: Test individual components (converter, models)
+- **Integration testing**: Test API client with mock server
+- **End-to-end testing**: Full export workflow with test data
+- **Performance testing**: Benchmark large note exports (1000+ notes)
+- **Error scenario testing**: Invalid tokens, network failures, malformed data
 
 ## Documentation
 
 ### User Documentation
 
-- Installation guide
-- User manual
-- CLI reference
-- Examples and tutorials
+- **Installation guide**: Platform-specific installation instructions
+- **Quick start guide**: Getting started with first export
+- **CLI reference**: Complete command and flag documentation
+- **Configuration guide**: Setting up API tokens and preferences
+- **Troubleshooting**: Common issues and solutions
 
 ### Developer Documentation
 
-- Architecture documentation
-- API documentation
-- Contributing guidelines
-- Code style guide
+- **Architecture documentation**: System design and component interaction
+- **API client documentation**: Granola API integration details
+- **Converter documentation**: Markdown conversion logic
+- **Contributing guidelines**: How to contribute to the project
+- **Testing guide**: How to run and write tests
 
 ## Risks and Mitigation
 
-| Risk   | Impact          | Probability     | Mitigation Strategy |
-|--------|-----------------|-----------------|---------------------|
-| Risk 1 | High/Medium/Low | High/Medium/Low | Mitigation approach |
-| Risk 2 | High/Medium/Low | High/Medium/Low | Mitigation approach |
+| Risk                      | Impact | Probability | Mitigation Strategy                           |
+|---------------------------|--------|-------------|------------------------------------------------|
+| API changes/deprecation   | High   | Low         | Version API calls, maintain compatibility     |
+| Rate limiting             | Medium | Medium      | Implement retry logic with exponential backoff|
+| Large note collections    | Medium | Medium      | Stream processing, pagination support         |
+| Token security breach     | High   | Low         | Secure storage, no logging of sensitive data  |
+| Data loss during export   | High   | Low         | Validation, checksums, transaction-like saves |
 
 ## Dependencies
 
 ### External Dependencies
 
-- Dependency 1: [Description and purpose]
-- Dependency 2: [Description and purpose]
+- **Granola API**: Source of note data, requires active service
+- **Internet connectivity**: Required for API communication
+- **Go standard library**: Core functionality (net/http, encoding/json)
+- **Cobra/Viper**: CLI framework and configuration management
+- **Charmbracelet libraries**: Enhanced CLI experience
 
 ### Internal Dependencies
 
-- Component 1 depends on Component 2
-- Component 3 depends on Component 1
+- Export command depends on API client
+- API client depends on configuration (token, URL)
+- Converter depends on models package
+- File writer depends on converter output
 
 ## Constraints
 
 ### Technical Constraints
 
-- Constraint 1
-- Constraint 2
+- Requires Go 1.23.1 or higher
+- API token required for authentication
+- Internet connection required for API access
+- Local filesystem write permissions needed
 
 ### Business Constraints
 
-- Budget constraints
-- Timeline constraints
-- Resource constraints
+- Must work with existing Granola API (no modifications)
+- Single developer/maintainer resource
+- Open-source project (no licensing fees)
 
 ## Maintenance and Support
 
 ### Maintenance Plan
 
-[Approach for ongoing maintenance]
+- Regular dependency updates via Dependabot
+- API compatibility monitoring
+- Bug fixes based on user reports
+- Feature additions based on community feedback
+- Security patches as needed
 
 ### Support Strategy
 
-[How users will get help and report issues]
+- GitHub Issues for bug reports and feature requests
+- README documentation for common use cases
+- GitHub Discussions for community support
+- Release notes for version changes
 
 ### Update and Release Process
 
@@ -198,11 +346,18 @@
 
 ## Glossary
 
-| Term   | Definition           |
-|--------|----------------------|
-| Term 1 | Definition of term 1 |
-| Term 2 | Definition of term 2 |
+| Term          | Definition                                                      |
+|---------------|----------------------------------------------------------------|
+| Bearer Token  | Authentication token used to access Granola API                |
+| Frontmatter   | YAML metadata block at the beginning of Markdown files         |
+| Export        | Process of downloading and converting notes to local files     |
+| Granola       | The note-taking application from which notes are exported      |
+| Markdown      | Plain text formatting syntax for creating formatted documents  |
 
 ## References
 
-[Links to relevant documentation, research, or related projects]
+- [Cobra Documentation](https://cobra.dev/)
+- [Viper Documentation](https://github.com/spf13/viper)
+- [Markdown Specification](https://spec.commonmark.org/)
+- [YAML Frontmatter Standard](https://jekyllrb.com/docs/front-matter/)
+- [GoReleaser Documentation](https://goreleaser.com/)

@@ -1,89 +1,88 @@
-# go-template
+# Granola CLI
 
-[![Go Version](https://img.shields.io/github/go-mod/go-version/theantichris/go-template)](https://go.dev/)
-[![Go Reference](https://pkg.go.dev/badge/github.com/theantichris/go-template.svg)](https://pkg.go.dev/github.com/theantichris/go-template)
-[![Go Report Card](https://goreportcard.com/badge/github.com/theantichris/go-template)](https://goreportcard.com/report/github.com/theantichris/go-template)
-[![Go](https://github.com/theantichris/go-template/actions/workflows/go.yml/badge.svg)](https://github.com/theantichris/go-template/actions/workflows/go.yml)
-[![Markdown Lint](https://github.com/theantichris/go-template/actions/workflows/markdown.yml/badge.svg)](https://github.com/theantichris/go-template/actions/workflows/markdown.yml)
-[![License](https://img.shields.io/github/license/theantichris/go-template)](LICENSE)
-[![Release](https://img.shields.io/github/v/release/theantichris/go-template)](https://github.com/theantichris/go-template/releases)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/theantichris/granola)](https://go.dev/)
+[![Go Reference](https://pkg.go.dev/badge/github.com/theantichris/granola.svg)](https://pkg.go.dev/github.com/theantichris/granola)
+[![Go Report Card](https://goreportcard.com/badge/github.com/theantichris/granola)](https://goreportcard.com/report/github.com/theantichris/granola)
+[![Go](https://github.com/theantichris/granola/actions/workflows/go.yml/badge.svg)](https://github.com/theantichris/granola/actions/workflows/go.yml)
+[![Markdown Lint](https://github.com/theantichris/granola/actions/workflows/markdown.yml/badge.svg)](https://github.com/theantichris/granola/actions/workflows/markdown.yml)
+[![License](https://img.shields.io/github/license/theantichris/granola)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/theantichris/granola)](https://github.com/theantichris/granola/releases)
 
-A modern Go template for building CLI and TUI applications with best
-practices and powerful tools.
+A CLI tool for exporting your Granola notes to Markdown files.
 
 ## Features
 
-- 🎯 **Cobra Command Framework** - Build powerful CLI applications with ease
-- ⚙️ **Viper Configuration** - Flexible configuration management with TOML,
-  environment variables, and flags
-- 📝 **Structured Logging** - Beautiful logging with Charmbracelet's log package
-- 🎨 **Charmbracelet Tools** - Modern terminal UI capabilities
-- 🔧 **Environment Support** - `.env` file support for local development
-- 📦 **Modular Structure** - Clean, organized project layout
-- 🚀 **Automated Releases** - GoReleaser integration for multi-platform builds
+- 📝 **Export Granola Notes** - Export all your notes from the Granola API
+- 🔄 **JSON to Markdown** - Automatic conversion from JSON format to clean Markdown
+- 🏷️ **Metadata Preservation** - Maintains note metadata including creation dates and tags
+- 🔐 **Bearer Token Auth** - Secure API authentication using bearer tokens
+- ⚙️ **Flexible Configuration** - Configure via environment variables, config files, or flags
+- 📁 **Batch Export** - Export all notes in a single command
+- 🚀 **Fast and Efficient** - Built with Go for optimal performance
 
 ## Installation
 
 ### From Release
 
-Download the latest release from the [releases page](https://github.com/theantichris/go-template/releases).
+Download the latest release from the [releases page](https://github.com/theantichris/granola/releases).
 
 ### From Source
 
 ```bash
-git clone https://github.com/theantichris/go-template.git
-cd go-template
-go build -o go-template
+git clone https://github.com/theantichris/granola.git
+cd granola
+go build -o granola
 ```
 
 ### Using Go Install
 
 ```bash
-go install github.com/theantichris/go-template@latest
+go install github.com/theantichris/granola@latest
 ```
 
 ## Quick Start
 
-1. **Clone and rename the template:**
+1. **Set up your Granola API token:**
 
    ```bash
-   git clone https://github.com/theantichris/go-template.git my-app
-   cd my-app
-   rm -rf .git
-   git init
+   export GRANOLA_API_TOKEN="your-bearer-token-here"
+   # Or add to .env file:
+   echo "GRANOLA_API_TOKEN=your-bearer-token-here" >> .env
    ```
 
-2. **Update module name:**
+2. **Export all your notes:**
 
    ```bash
-   go mod edit -module github.com/yourusername/my-app
-   go mod tidy
+   granola export
+   # Notes will be exported to ./exports/ directory by default
    ```
 
-3. **Customize the application:**
-   - Edit `cmd/root.go` to change the command name and description
-   - Add new commands in the `cmd/` directory
-   - Update configuration options as needed
+3. **Specify a custom output directory:**
+
+   ```bash
+   granola export --output /path/to/output
+   ```
 
 ## Usage
 
 ### Basic Commands
 
 ```bash
-# Run the application
-go run main.go
+# Export all notes with default settings
+granola export
 
-# Build the application
-go build
+# Export with custom output directory
+granola export --output ./my-notes
 
-# Run with debug logging
-./go-template --debug
+# Export with debug logging
+granola export --debug
 
 # Use custom config file
-./go-template --config /path/to/config.toml
+granola --config /path/to/config.toml export
 
 # Display help
-./go-template --help
+granola --help
+granola export --help
 ```
 
 ### Configuration
@@ -102,7 +101,9 @@ Create a `.config.toml` file in your home directory or current directory:
 
 ```toml
 debug = true
-envVar = "some-value"
+api_token = "your-bearer-token-here"
+api_url = "https://api.granola.app"
+output_dir = "./exports"
 ```
 
 #### Environment Variables
@@ -110,29 +111,38 @@ envVar = "some-value"
 Create a `.env` file for local development:
 
 ```bash
+GRANOLA_API_TOKEN=your-bearer-token-here
+GRANOLA_API_URL=https://api.granola.app
+GRANOLA_OUTPUT_DIR=./exports
 DEBUG=true
-ENV_VAR=some-value
 ```
 
 Or set environment variables directly:
 
 ```bash
+export GRANOLA_API_TOKEN="your-bearer-token-here"
+export GRANOLA_API_URL="https://api.granola.app"
+export GRANOLA_OUTPUT_DIR="./exports"
 export DEBUG=true
-export ENV_VAR=some-value
 ```
 
 ## Project Structure
 
 ```text
-go-template/
+granola/
 ├── cmd/
-│   └── root.go         # Root command and configuration
+│   ├── root.go         # Root command and configuration
+│   └── export.go       # Export command implementation
+├── internal/
+│   ├── api/            # Granola API client
+│   ├── converter/      # JSON to Markdown converter
+│   └── models/         # Data models for notes
 ├── main.go             # Application entry point
 ├── go.mod              # Go module dependencies
 ├── go.sum              # Dependency checksums
 ├── README.md           # Project documentation
 ├── CLAUDE.md           # Claude AI assistant guide
-├── SPEC.md             # Project specification template
+├── SPEC.md             # Project specification
 └── LICENSE             # License file
 ```
 
@@ -150,9 +160,9 @@ go-template/
 go build
 
 # Build for specific platforms
-GOOS=linux GOARCH=amd64 go build -o go-template-linux
-GOOS=darwin GOARCH=amd64 go build -o go-template-darwin
-GOOS=windows GOARCH=amd64 go build -o go-template.exe
+GOOS=linux GOARCH=amd64 go build -o granola-linux
+GOOS=darwin GOARCH=amd64 go build -o granola-darwin
+GOOS=windows GOARCH=amd64 go build -o granola.exe
 ```
 
 ### Releasing
@@ -232,7 +242,7 @@ file for details.
 
 ## Support
 
-For issues, questions, or suggestions, please [open an issue](https://github.com/theantichris/go-template/issues).
+For issues, questions, or suggestions, please [open an issue](https://github.com/theantichris/granola/issues).
 
 ---
 
