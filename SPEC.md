@@ -24,9 +24,11 @@ clean, readable Markdown files with preserved metadata.
 
 ### Goals and Objectives
 
+- [x] Provide simple, secure authentication via Supabase tokens
+- [x] Connect to Granola API with proper headers
+- [x] Support configurable timeout for API requests
 - [ ] Export all notes from Granola API to local Markdown files
 - [ ] Preserve note metadata (creation date, tags, etc.) in exports
-- [ ] Provide simple, secure authentication via bearer tokens
 - [ ] Support batch export of all notes in a single command
 - [ ] Create well-organized file structure for exported notes
 - [ ] Incremental exports (only new notes)
@@ -73,10 +75,10 @@ clean, readable Markdown files with preserved metadata.
 
 #### Core Features
 
-1. **API Authentication**
-   - Secure authentication using bearer tokens
+1. **API Authentication** ✅
+   - Secure authentication using Supabase tokens
+   - Token extraction from supabase.json file
    - Token configuration via environment variables or config file
-   - Validation of token before API calls
    - Priority: High
 
 2. **Note Export**
@@ -130,11 +132,27 @@ clean, readable Markdown files with preserved metadata.
 - Data integrity verification
 - Clear error reporting with actionable messages
 
+### Logging Strategy
+
+#### Error Logging Best Practices
+
+- **Log Once**: Log errors only where they are handled (typically in cmd package), not where they are created
+- **Internal Packages**: Return errors without logging to prevent duplicate log entries
+- **Command Functions**: Return errors to Cobra framework rather than logging directly - Cobra handles error display to users
+- **Avoid Duplication**: Since Cobra prints returned errors to stderr, logging them in commands creates duplicate output
+
+#### Appropriate Logging Locations
+
+- **Debug/Info Logging**: Can occur at any level for progress tracking and debugging
+- **Error Logging**: Only at the top of the call stack where errors are actually handled
+- **Library Code**: Never log errors in internal packages - just wrap and return them
+- **Background Tasks**: Exception where error logging is required since there's no caller to return to
+
 ## Technical Architecture
 
 ### System Architecture
 
-```
+```text
 ┌─────────────┐     ┌──────────────┐     ┌─────────────┐
 │   CLI       │────▶│ API Client   │────▶│ Granola API │
 │  (Cobra)    │     │ (HTTP/Auth)  │     │   (JSON)    │
@@ -165,17 +183,20 @@ clean, readable Markdown files with preserved metadata.
 - **Framework**: Cobra (CLI framework)
 - **Configuration**: Viper (TOML config files, environment variables, flags)
 - **Logging**: Charmbracelet/log (structured logging with caller and timestamp)
+- **Testing**: Afero for filesystem abstraction
 - **Build & Release**: GoReleaser (automated multi-platform builds and releases)
 - **Key Libraries**:
   - charmbracelet/fang: Enhanced command execution with context
   - godotenv: .env file support for local development
+  - spf13/afero: Filesystem abstraction for testable file operations
   - net/http: HTTP client for API communication
   - encoding/json: JSON parsing and serialization
-  - gopkg.in/yaml.v3: YAML frontmatter generation
+  - gopkg.in/yaml.v3: YAML frontmatter generation (planned)
 
 ### Data Model
 
 #### Note Structure (JSON from API)
+
 ```json
 {
   "id": "string",
@@ -191,6 +212,7 @@ clean, readable Markdown files with preserved metadata.
 ```
 
 #### Markdown Output Format
+
 ```markdown
 ---
 id: note-id
@@ -208,15 +230,23 @@ Note content in Markdown format...
 
 #### Granola API Endpoints
 
-**Authentication**
-- Header: `Authorization: Bearer <token>`
+Authentication
 
-**Get All Notes**
-- Endpoint: `GET /api/notes`
-- Response: JSON array of note objects
-- Pagination: Handle via query parameters if needed
+- Header: `Authorization: Bearer <token>` (extracted from supabase.json)
+- Additional Headers:
+  - `User-Agent: Granola/5.354.0`
+  - `X-Client-Version: 5.354.0`
+  - `Content-Type: application/json`
+  - `Accept: */*`
 
-**Error Responses**
+Get All Documents
+
+- Endpoint: `GET https://api.granola.ai/v2/get-documents`
+- Response: JSON object with `docs` array containing document objects
+- HTTP Client: Configurable timeout (default 2 minutes)
+
+Error Responses
+
 - 401: Invalid or missing authentication token
 - 429: Rate limit exceeded
 - 500: Server error
@@ -238,9 +268,8 @@ granola [global-flags] <command> [command-flags]
 granola export [flags]
 
 # Export Flags
---output string   Output directory (default: ./exports)
---token string    Granola API token (overrides env/config)
---api-url string  Granola API URL (default: https://api.granola.app)
+--supabase string    Path to supabase.json file (overrides env/config)
+--timeout duration   HTTP timeout for API requests (default: 2m)
 ```
 
 ### Terminal User Interface
@@ -251,11 +280,21 @@ Not applicable - this is a CLI-only tool with no interactive TUI components.
 
 ### Testing Approach
 
-- **Unit testing**: Test individual components (converter, models)
-- **Integration testing**: Test API client with mock server
-- **End-to-end testing**: Full export workflow with test data
-- **Performance testing**: Benchmark large note exports (1000+ notes)
-- **Error scenario testing**: Invalid tokens, network failures, malformed data
+- **Unit testing**: Test individual components with dependency injection
+  - Using sub-test pattern for better test organization
+  - Happy path testing implemented
+  - Mock filesystem using Afero for file operations
+  - All tests should be independent and run in parallel using `t.Parallel()` whenever possible
+- **Integration testing**: Test API client with mock server (planned)
+- **End-to-end testing**: Full export workflow with test data (planned)
+- **Performance testing**: Benchmark large note exports (1000+ notes) (planned)
+- **Error scenario testing**: Invalid tokens, network failures, malformed data (planned)
+
+### Current Test Coverage
+
+- `cmd/root.go`: Unit tests for command creation and configuration
+- `cmd/export.go`: Basic test structure (awaiting API interface refactoring)
+- `internal/api/`: Token extraction and document fetching tests
 
 ## Documentation
 
@@ -278,7 +317,7 @@ Not applicable - this is a CLI-only tool with no interactive TUI components.
 ## Risks and Mitigation
 
 | Risk                      | Impact | Probability | Mitigation Strategy                           |
-|---------------------------|--------|-------------|------------------------------------------------|
+|---------------------------|--------|-------------|-----------------------------------------------|
 | API changes/deprecation   | High   | Low         | Version API calls, maintain compatibility     |
 | Rate limiting             | Medium | Medium      | Implement retry logic with exponential backoff|
 | Large note collections    | Medium | Medium      | Stream processing, pagination support         |
@@ -346,7 +385,7 @@ Not applicable - this is a CLI-only tool with no interactive TUI components.
 
 ## Glossary
 
-| Term          | Definition                                                      |
+| Term          | Definition                                                     |
 |---------------|----------------------------------------------------------------|
 | Bearer Token  | Authentication token used to access Granola API                |
 | Frontmatter   | YAML metadata block at the beginning of Markdown files         |

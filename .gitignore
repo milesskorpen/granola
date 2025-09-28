@@ -4,10 +4,14 @@
 *.dll
 *.so
 *.dylib
-go-template
+granola
 
 # Test binary, built with `go test -c`
 *.test
+
+# Test data
+supabase.json
+granola-response.json
 
 # Code coverage profiles and other test artifacts
 *.out
