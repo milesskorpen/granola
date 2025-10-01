@@ -1,5 +1,15 @@
 # Granola CLI
 
+```text
+                                       _
+                             _        | |
+  __ _ _ __ __ _ _ __   ___ | | __ _  | |
+ / _` | '__/ _` | '_ \ / _ \| |/ _` | | |
+| (_| | | | (_| | | | | (_) | | (_| | | |
+ \__, |_|  \__,_|_| |_|\___/|_|\__,_| | |
+ |___/                                |_|
+```
+
 [![Go Version](https://img.shields.io/github/go-mod/go-version/theantichris/granola)](https://go.dev/)
 [![Go Reference](https://pkg.go.dev/badge/github.com/theantichris/granola.svg)](https://pkg.go.dev/github.com/theantichris/granola)
 [![Go Report Card](https://goreportcard.com/badge/github.com/theantichris/granola)](https://goreportcard.com/report/github.com/theantichris/granola)
@@ -8,34 +18,30 @@
 [![License](https://img.shields.io/github/license/theantichris/granola)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/theantichris/granola)](https://github.com/theantichris/granola/releases)
 
-A CLI tool for exporting your Granola notes to Markdown files.
+Export your [Granola](https://granola.ai) notes and transcripts to local files for backup, migration, or offline access.
 
-## Features
+## Why Use This?
 
-- 📝 **Export Granola Notes** - Export all your notes from the Granola API to local Markdown files
-- 🔄 **JSON to Markdown** - Automatic conversion from ProseMirror JSON to clean Markdown with YAML frontmatter
-- 🏷️ **Metadata Preservation** - Maintains note metadata including creation dates, update dates, and tags
-- 🔐 **Bearer Token Auth** - Secure API authentication using bearer tokens from Supabase
-- ⚙️ **Flexible Configuration** - Configure via environment variables, config files, or flags
-- 📁 **Batch Export** - Export all notes in a single command to a specified directory
-- ⚡ **Incremental Updates** - Only updates files when notes are modified (compares timestamps)
-- 🚀 **Fast and Efficient** - Built with Go for optimal performance
+- 📝 **Own Your Data** - Keep local copies of all your meeting notes
+- 🎙️ **Full Transcripts** - Export complete, timestamped transcripts of your meetings
+- 💾 **Backup & Migration** - Safeguard your notes or move them to other tools
+- 🔄 **Smart Updates** - Only exports new or changed content
+- ⚡ **Fast & Simple** - One command to export everything
 
 ## Installation
 
-### From Release
+### Download Pre-Built Binary (Recommended)
 
-Download the latest release from the [releases page](https://github.com/theantichris/granola/releases).
+1. Go to the [releases page](https://github.com/theantichris/granola/releases/latest)
+2. Download the appropriate file for your operating system:
+   - **macOS**: `granola_Darwin_x86_64.tar.gz` (Intel) or `granola_Darwin_arm64.tar.gz` (Apple Silicon)
+   - **Linux**: `granola_Linux_x86_64.tar.gz`
+   - **Windows**: `granola_Windows_x86_64.zip`
+3. Extract the archive and move `granola` to a location in your PATH
 
-### From Source
+### Install with Go
 
-```bash
-git clone https://github.com/theantichris/granola.git
-cd granola
-go build -o granola
-```
-
-### Using Go Install
+If you have Go installed:
 
 ```bash
 go install github.com/theantichris/granola@latest
@@ -43,59 +49,119 @@ go install github.com/theantichris/granola@latest
 
 ## Quick Start
 
-### Finding Your Supabase Credentials
+### Export Your Notes
 
-Granola stores authentication credentials in a `supabase.json` file. The location
-depends on your operating system:
+Your notes are the AI-generated summaries and formatted content from Granola.
+
+**macOS/Linux:**
+
+```bash
+granola notes --supabase "$HOME/Library/Application Support/Granola/supabase.json"
+```
+
+**Windows (PowerShell):**
+
+```powershell
+granola notes --supabase "$env:APPDATA\Granola\supabase.json"
+```
+
+Notes will be exported to a `notes/` directory as Markdown files.
+
+### Export Your Transcripts
+
+Transcripts are the raw, timestamped recordings of everything said in your meetings.
+
+**Note:** Transcripts are only available for meetings where you enabled audio recording.
+
+**macOS:**
+
+```bash
+granola transcripts
+```
+
+**Linux:**
+
+```bash
+granola transcripts --cache "$HOME/.config/Granola/cache-v3.json"
+```
+
+**Windows (PowerShell):**
+
+```powershell
+granola transcripts --cache "$env:APPDATA\Granola\cache-v3.json"
+```
+
+Transcripts will be exported to a `transcripts/` directory as text files.
+
+## Where Granola Stores Your Data
+
+### Supabase Credentials File
+
+Granola uses a `supabase.json` file for API authentication:
 
 - **macOS**: `~/Library/Application Support/Granola/supabase.json`
 - **Linux**: `~/.config/Granola/supabase.json` or `~/.local/share/Granola/supabase.json`
 - **Windows**: `%APPDATA%\Granola\supabase.json`
 
-### Setup
+### Cache File (for Transcripts)
 
-1. **Configure the path to your supabase.json file:**
+Granola stores raw transcripts in a local cache file:
 
-   ```bash
-   # Via environment variable
-   export SUPABASE_FILE="$HOME/Library/Application Support/Granola/supabase.json"
+- **macOS**: `~/Library/Application Support/Granola/cache-v3.json`
+- **Linux**: `~/.config/Granola/cache-v3.json` or `~/.local/share/Granola/cache-v3.json`
+- **Windows**: `%APPDATA%\Granola\cache-v3.json`
 
-   # Or via .env file
-   echo "SUPABASE_FILE=$HOME/Library/Application Support/Granola/supabase.json" >> .env
+## Common Options
 
-   # Or via command flag
-   granola export --supabase "$HOME/Library/Application Support/Granola/supabase.json"
-   ```
+### Custom Output Directory
 
-2. **Export all your notes:**
+```bash
+# Export notes to a specific location
+granola notes --output ~/Documents/MyNotes
 
-   ```bash
-   granola export
-   # Exports to ./notes directory by default
-   ```
+# Export transcripts to a specific location
+granola transcripts --output ~/Documents/MyTranscripts
+```
 
-3. **Export with custom output directory:**
+### Set Default Configuration
 
-   ```bash
-   granola export --output /path/to/output
-   ```
+Create a `.granola.toml` file in your home directory to avoid specifying paths every time:
 
-4. **Export with custom timeout:**
+```toml
+# Notes configuration
+supabase = "/Users/yourname/Library/Application Support/Granola/supabase.json"
+output = "/Users/yourname/Documents/Notes"
 
-   ```bash
-   granola export --timeout 5m
-   ```
+# Transcripts configuration
+cache-file = "/Users/yourname/Library/Application Support/Granola/cache-v3.json"
+transcript-output = "/Users/yourname/Documents/Transcripts"
+```
 
-### What Gets Exported
+Then simply run:
 
-Each note is exported as a separate Markdown file with:
+```bash
+granola notes
+granola transcripts
+```
 
-- **YAML frontmatter** containing metadata (ID, created/updated timestamps, tags)
-- **Note title** as a top-level heading
-- **Note content** converted from ProseMirror JSON to Markdown format
-  - Supports headings, paragraphs, bullet lists, and nested lists
+### Enable Debug Logging
 
-**Example output:**
+```bash
+granola notes --debug
+granola transcripts --debug
+```
+
+## What Gets Exported
+
+### Notes (Markdown Files)
+
+Each note becomes a separate `.md` file with:
+
+- **YAML frontmatter** - ID, timestamps, tags
+- **Title** - As a top-level heading
+- **Content** - Formatted as Markdown with headings, lists, etc.
+
+Example:
 
 ```markdown
 ---
@@ -113,209 +179,233 @@ tags:
 
 - First important point
 - Second important point
-  - Nested detail
-
-Action items discussed...
 ```
 
-### Incremental Exports
+### Transcripts (Text Files)
 
-The CLI intelligently handles repeated exports:
+Each transcript becomes a `.txt` file with:
 
-- **First run**: All notes are exported
-- **Subsequent runs**: Only new or updated notes are written
-- **Timestamp comparison**: Files are only updated if the note's `updated_at`
-  timestamp is newer than the existing file's modification time
-- **Performance**: Saves time by skipping unchanged notes
+- **Header** - Title, ID, timestamps, segment count
+- **Timestamped dialogue** - `[HH:MM:SS] Speaker: Text`
+- **Speaker labels** - "System" (others) or "You" (your microphone)
 
-This means you can safely run `granola export` multiple times without worrying
-about unnecessary file writes.
-
-## Usage
-
-### Basic Commands
-
-```bash
-# Export all notes (requires supabase file path to be configured)
-granola export
-
-# Export with specific supabase file
-granola export --supabase /path/to/supabase.json
-
-# Export to custom output directory
-granola export --output /path/to/notes
-
-# Export with custom timeout
-granola export --timeout 5m
-
-# Export with debug logging
-granola export --debug
-
-# Use custom config file
-granola --config /path/to/config.toml export
-
-# Display help
-granola --help
-granola export --help
-```
-
-### Configuration
-
-The application supports multiple configuration sources with the following
-precedence:
-
-1. Command-line flags
-2. Environment variables
-3. Configuration file
-4. Default values
-
-#### Configuration File
-
-Create a `.granola.toml` file in your home directory or current directory:
-
-```toml
-debug = true
-supabase = "/path/to/supabase.json"
-timeout = "2m"
-output = "/path/to/notes"
-```
-
-#### Environment Variables
-
-Create a `.env` file for local development:
-
-```bash
-SUPABASE_FILE=/path/to/supabase.json
-DEBUG_MODE=true
-```
-
-Or set environment variables directly:
-
-```bash
-export SUPABASE_FILE="/path/to/supabase.json"
-export DEBUG_MODE=true
-```
-
-## Project Structure
+Example:
 
 ```text
-granola/
-├── cmd/
-│   ├── root.go         # Root command and configuration
-│   └── export.go       # Export command implementation
-├── internal/
-│   ├── api/            # Granola API client and document models
-│   ├── converter/      # Document to Markdown converter
-│   ├── prosemirror/    # ProseMirror JSON to Markdown converter
-│   └── writer/         # File system writer for Markdown files
-├── main.go             # Application entry point
-├── go.mod              # Go module dependencies
-├── go.sum              # Dependency checksums
-├── README.md           # Project documentation
-├── CLAUDE.md           # Claude AI assistant guide
-├── SPEC.md             # Project specification
-└── LICENSE             # License file
+================================================================================
+🤖 Team Sync Meeting
+ID: abc-123
+Created: 2024-01-01T14:00:00.000Z
+Segments: 142
+================================================================================
+
+[14:00:04] System: Good morning everyone, how's it going?
+[14:00:06] You: Good morning! Ready to start.
 ```
 
-## Development
+## Troubleshooting
 
-### Prerequisites
+### "Failed to read supabase file"
+
+- Make sure Granola is installed and you've logged in at least once
+- Check that the path to `supabase.json` is correct for your OS
+- Try running Granola app first, then export
+
+### "No transcripts found"
+
+- Transcripts are only available for meetings where audio recording was enabled
+- Check that the cache file path is correct
+- Make sure you've had at least one meeting with recording enabled
+
+### "Permission denied"
+
+- Make sure you have read access to the Granola files
+- Try running without `sudo` - it's not needed
+
+### Need More Help?
+
+- Check the `--help` output: `granola notes --help`
+- [Open an issue](https://github.com/theantichris/granola/issues) on GitHub
+
+---
+
+## For Contributors & Developers
+
+The sections below are for those who want to contribute to the project or build from source.
+
+### Building from Source
+
+**Requirements:**
 
 - Go 1.23.1 or higher
 - Git
 
-### Building
+**Clone and build:**
 
 ```bash
-# Build for current platform
-go build
+git clone https://github.com/theantichris/granola.git
+cd granola
+go build -o granola
+```
 
-# Build for specific platforms
+**Cross-platform builds:**
+
+```bash
+# Linux
 GOOS=linux GOARCH=amd64 go build -o granola-linux
+
+# macOS Intel
 GOOS=darwin GOARCH=amd64 go build -o granola-darwin
+
+# macOS Apple Silicon
+GOOS=darwin GOARCH=arm64 go build -o granola-darwin-arm64
+
+# Windows
 GOOS=windows GOARCH=amd64 go build -o granola.exe
 ```
 
-### Releasing
+### Project Structure
 
-This project uses [GoReleaser](https://goreleaser.com/) for automated releases.
-
-```bash
-# Create a new tag
-git tag v0.1.0
-git push origin v0.1.0
-
-# For local testing (requires GoReleaser installed)
-goreleaser release --snapshot --clean
+```text
+granola/
+├── cmd/                # Command implementations
+│   ├── root.go         # Root command and configuration
+│   ├── notes.go        # Notes export (API-based)
+│   └── transcripts.go  # Transcripts export (cache-based)
+├── internal/           # Internal packages
+│   ├── api/            # Granola API client
+│   ├── cache/          # Cache file reader
+│   ├── converter/      # Document to Markdown converter
+│   ├── prosemirror/    # ProseMirror JSON parser
+│   ├── transcript/     # Transcript formatter
+│   └── writer/         # File system operations
+├── main.go             # Entry point
+├── README.md           # This file
+├── CLAUDE.md           # AI assistant guidelines
+├── SPEC.md             # Technical specification
+└── LICENSE             # MIT License
 ```
 
-Releases are automatically built and published when a new tag is pushed to
-GitHub.
-
-### Testing
+### Development Commands
 
 ```bash
-# Run all tests
+# Run tests
 go test ./...
 
 # Run tests with coverage
 go test -cover ./...
 
-# Run tests with verbose output
-go test -v ./...
-```
-
-### Linting
-
-```bash
-# Install Go linter
-go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
-
-# Run Go linter
+# Run linter (requires golangci-lint)
 golangci-lint run
 
-# Install Markdown linter
-brew install markdownlint-cli2
+# Run markdown linter (requires markdownlint-cli2)
+markdownlint-cli2 "**/*.md" "#notes" "#transcripts"
 
-# Run Markdown linter
-markdownlint-cli2 "**/*.md"
+# Run the CLI without building
+go run main.go notes --help
 ```
 
-## Dependencies
+### Testing
+
+The project uses Go's standard testing framework with:
+
+- **Unit tests** for individual components
+- **Table-driven tests** for comprehensive coverage
+- **Afero** for filesystem abstraction in tests
+- **Parallel test execution** where possible
+
+Run tests:
+
+```bash
+go test ./...           # All tests
+go test -v ./...        # Verbose output
+go test -cover ./...    # With coverage
+```
+
+### Releasing
+
+Releases are automated using [GoReleaser](https://goreleaser.com/):
+
+```bash
+# Create and push a new tag
+git tag v1.0.0
+git push origin v1.0.0
+
+# GitHub Actions will automatically build and publish the release
+```
+
+For local testing:
+
+```bash
+goreleaser release --snapshot --clean
+```
+
+### Contributing
+
+Contributions are welcome! Here's how to help:
+
+1. **Fork** the repository
+2. **Create a branch** for your feature (`git checkout -b feature/amazing-feature`)
+3. **Write tests** for your changes
+4. **Ensure tests pass** (`go test ./...`)
+5. **Commit your changes** (`git commit -m 'Add amazing feature'`)
+6. **Push to your branch** (`git push origin feature/amazing-feature`)
+7. **Open a Pull Request**
+
+**Guidelines:**
+
+- Follow existing code style
+- Add tests for new functionality
+- Update documentation as needed
+- Keep PRs focused on a single change
+
+For more details, see [CLAUDE.md](CLAUDE.md) (AI development guidelines) and [SPEC.md](SPEC.md) (technical specification).
+
+### Key Dependencies
 
 - [Cobra](https://github.com/spf13/cobra) - CLI framework
 - [Viper](https://github.com/spf13/viper) - Configuration management
-- [Afero](https://github.com/spf13/afero) - Filesystem abstraction for testing
 - [Charmbracelet Log](https://github.com/charmbracelet/log) - Structured logging
-- [Charmbracelet Fang](https://github.com/charmbracelet/fang) - Enhanced
-  command execution
-- [Godotenv](https://github.com/joho/godotenv) - .env file support
+- [Afero](https://github.com/spf13/afero) - Filesystem abstraction
 
-## Contributing
+### Architecture
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+**Notes Export (API-based):**
 
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+1. Read Supabase credentials from local file
+2. Authenticate with Granola API
+3. Fetch all documents as JSON
+4. Convert ProseMirror JSON to Markdown
+5. Write files with YAML frontmatter
+
+**Transcripts Export (Cache-based):**
+
+1. Read local cache file (double-JSON encoded)
+2. Extract transcript segments by document ID
+3. Format segments with timestamps and speakers
+4. Write text files with metadata headers
+
+For detailed technical documentation, see [SPEC.md](SPEC.md).
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE)
-file for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## Acknowledgments
 
-- The Go team for the amazing language and tools
-- The Cobra and Viper teams for excellent CLI libraries
-- The Charmbracelet team for beautiful terminal tools
+- [Granola](https://granola.so) - The amazing note-taking app this tool exports from
+- The Go team for the excellent language and tooling
+- [Cobra](https://cobra.dev/) and [Viper](https://github.com/spf13/viper) for the CLI framework
+- [Charmbracelet](https://charm.sh/) for beautiful terminal tools
 
 ## Support
 
-For issues, questions, or suggestions, please [open an issue](https://github.com/theantichris/granola/issues).
+For issues, questions, or feature requests:
+
+- [Open an issue](https://github.com/theantichris/granola/issues) on GitHub
+- Check existing issues for solutions
+- Include debug output (`--debug`) when reporting problems
 
 ---
 
-Built with ❤️ using Go
+Built with ❤️ by the community

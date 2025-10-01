@@ -1,3 +1,4 @@
+// Package cmd implements the CLI commands for the Granola application.
 package cmd
 
 import (
@@ -45,12 +46,13 @@ func NewRootCmd(logger *log.Logger) *cobra.Command {
 	cmd.PersistentFlags().BoolVar(&debug, "debug", false, "enable debug mode")
 	cmd.PersistentFlags().StringVar(&supabaseFile, "supabase", "", "supabase.json file")
 
-	cmd.AddCommand(NewExportCmd(logger))
+	cmd.AddCommand(NewNotesCmd(logger))
+	cmd.AddCommand(NewTranscriptsCmd(logger))
 
 	return cmd
 }
 
-// Execute creates the logger, initializes configuration, and executes the root command.
+// Execute creates the logger, initializes configuration, and returns the root command.
 func Execute() *cobra.Command {
 	logger := log.NewWithOptions(os.Stderr, log.Options{
 		ReportCaller:    true,
@@ -63,12 +65,6 @@ func Execute() *cobra.Command {
 	})
 
 	cmd := NewRootCmd(logger)
-
-	if err := cmd.Execute(); err != nil {
-		logger.Error(ErrRootCmd.Error(), "error", err)
-
-		return nil
-	}
 
 	return cmd
 }
