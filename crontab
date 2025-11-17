@@ -1,0 +1,8 @@
+0 * * * * /Users/milesskorpen/Documents/Code/granola/granola notes --supabase "/Users/
+  milesskorpen/Library/Application Support/Granola/supabase.json" >> "$HOME/.granola-notes.log"
+  2>&1
+milesskorpen/Library/Application Support/Granola/supabase.json" >> "$HOME/.granola-notes.log"
+  2>&1
+  5 * * * * /Users/milesskorpen/Documents/Code/granola/granola transcripts --cache "/
+  Users/milesskorpen/Library/Application Support/Granola/cache-v3.json" >> "$HOME/.granola-
+  transcripts.log" 2>&1

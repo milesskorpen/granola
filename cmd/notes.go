@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -22,6 +24,15 @@ var (
 	ErrSupabaseEmpty  = errors.New("supabase cannot be empty")
 	ErrDocumentExport = errors.New("failed to export documents")
 )
+
+func defaultNotesOutput() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "./notes"
+	}
+
+	return filepath.Join(home, "My Drive", "z. Granola Notes", "Markdown")
+}
 
 // NewNotesCmd creates a new notes command and binds its flags.
 func NewNotesCmd(logger *log.Logger) *cobra.Command {
@@ -49,7 +60,7 @@ func NewNotesCmd(logger *log.Logger) *cobra.Command {
 	cmd.Flags().DurationVar(&timeout, "timeout", 2*time.Minute, "HTTP timeout for API requests, default 2 minutes")
 
 	var output string
-	cmd.Flags().StringVar(&output, "output", "./notes", "Output directory for exported Markdown files")
+	cmd.Flags().StringVar(&output, "output", defaultNotesOutput(), "Output directory for exported Markdown files")
 
 	return cmd
 }
@@ -59,12 +70,17 @@ func NewNotesCmd(logger *log.Logger) *cobra.Command {
 func writeNotes(logger *log.Logger) error {
 	filename := viper.GetString("supabase")
 
-	if strings.TrimSpace(filename) == "" {
+	supabasePath, err := resolvePath(filename)
+	if err != nil {
+		return fmt.Errorf("%w: %s", ErrDocumentExport, err)
+	}
+
+	if strings.TrimSpace(supabasePath) == "" {
 		return fmt.Errorf("%w: set the path to supabase.json via flag, config file, or env variable", ErrSupabaseEmpty)
 	}
 
-	logger.Info("Reading supabase configuration", "file", filename)
-	supabaseContent, err := afero.ReadFile(appFS, filename)
+	logger.Info("Reading supabase configuration", "file", supabasePath)
+	supabaseContent, err := afero.ReadFile(appFS, supabasePath)
 	if err != nil {
 		return fmt.Errorf("%w: %s", ErrDocumentExport, err)
 	}
@@ -80,7 +96,14 @@ func writeNotes(logger *log.Logger) error {
 
 	logger.Info("Retrieved documents", "count", len(documents))
 
-	outputDir := viper.GetString("output")
+	outputDir, err := resolvePath(viper.GetString("output"))
+	if err != nil {
+		return fmt.Errorf("%w: %s", ErrDocumentExport, err)
+	}
+	if outputDir == "" {
+		outputDir = "./notes"
+	}
+
 	fmt.Printf("Exporting %d notes to %s...\n", len(documents), outputDir)
 	logger.Info("Writing documents to Markdown files", "output", outputDir)
 

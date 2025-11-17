@@ -21,21 +21,6 @@ func NewRootCmd(logger *log.Logger) *cobra.Command {
 		Use:   "granola",
 		Short: "An application for exporting Granola meeting notes.",
 		Long:  "An application for exporting Granola meeting notes to Markdown files.",
-		PreRunE: func(cmd *cobra.Command, args []string) error {
-			if err := viper.BindPFlag("config", cmd.PersistentFlags().Lookup("config")); err != nil {
-				return fmt.Errorf("%w: %s", ErrRootCmd, err)
-			}
-
-			if err := viper.BindPFlag("debug", cmd.PersistentFlags().Lookup("debug")); err != nil {
-				return fmt.Errorf("%w: %s", ErrRootCmd, err)
-			}
-
-			if err := viper.BindPFlag("supabase", cmd.PersistentFlags().Lookup("supabase")); err != nil {
-				return fmt.Errorf("%w: %s", ErrRootCmd, err)
-			}
-
-			return nil
-		},
 	}
 
 	var configFile string
@@ -45,6 +30,16 @@ func NewRootCmd(logger *log.Logger) *cobra.Command {
 	cmd.PersistentFlags().StringVar(&configFile, "config", "", "config file (default is $HOME/.config.toml)")
 	cmd.PersistentFlags().BoolVar(&debug, "debug", false, "enable debug mode")
 	cmd.PersistentFlags().StringVar(&supabaseFile, "supabase", "", "supabase.json file")
+
+	if err := viper.BindPFlag("config", cmd.PersistentFlags().Lookup("config")); err != nil {
+		panic(fmt.Errorf("%w: %s", ErrRootCmd, err))
+	}
+	if err := viper.BindPFlag("debug", cmd.PersistentFlags().Lookup("debug")); err != nil {
+		panic(fmt.Errorf("%w: %s", ErrRootCmd, err))
+	}
+	if err := viper.BindPFlag("supabase", cmd.PersistentFlags().Lookup("supabase")); err != nil {
+		panic(fmt.Errorf("%w: %s", ErrRootCmd, err))
+	}
 
 	cmd.AddCommand(NewNotesCmd(logger))
 	cmd.AddCommand(NewTranscriptsCmd(logger))

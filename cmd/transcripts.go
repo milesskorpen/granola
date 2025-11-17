@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/log"
@@ -57,16 +58,31 @@ func NewTranscriptsCmd(logger *log.Logger) *cobra.Command {
 func writeTranscripts(logger *log.Logger) error {
 	cacheFile := viper.GetString("cache-file")
 
+	cachePath, err := resolvePath(cacheFile)
+	if err != nil {
+		return fmt.Errorf("%w: %s", ErrTranscriptExport, err)
+	}
+	if strings.TrimSpace(cachePath) == "" {
+		return fmt.Errorf("%w: set the path to cache-v3.json via flag, config file, or env variable", ErrCacheFileNotFound)
+	}
+
 	fmt.Println("Reading Granola cache file...")
-	logger.Info("Reading Granola cache file", "file", cacheFile)
-	cacheData, err := cache.ReadCache(cacheFile)
+	logger.Info("Reading Granola cache file", "file", cachePath)
+	cacheData, err := cache.ReadCache(cachePath)
 	if err != nil {
 		return fmt.Errorf("%w: %s", ErrTranscriptExport, err)
 	}
 
 	logger.Info("Loaded cache data", "documents", len(cacheData.Documents), "transcripts", len(cacheData.Transcripts))
 
-	outputDir := viper.GetString("transcript-output")
+	outputDir, err := resolvePath(viper.GetString("transcript-output"))
+	if err != nil {
+		return fmt.Errorf("%w: %s", ErrTranscriptExport, err)
+	}
+	if outputDir == "" {
+		outputDir = "./transcripts"
+	}
+
 	fmt.Printf("Exporting %d transcripts to %s...\n", len(cacheData.Transcripts), outputDir)
 	logger.Info("Writing transcripts to files", "output", outputDir)
 

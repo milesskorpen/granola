@@ -123,6 +123,8 @@ granola notes --output ~/Documents/MyNotes
 granola transcripts --output ~/Documents/MyTranscripts
 ```
 
+By default the notes command now saves Markdown files under `~/My Drive/z. Granola Notes/Markdown`. Any path passed via flags or configuration may include `~` or environment variables, and the CLI will resolve them before writing files.
+
 ### Set Default Configuration
 
 Create a `.granola.toml` file in your home directory to avoid specifying paths every time:
@@ -143,6 +145,18 @@ Then simply run:
 granola notes
 granola transcripts
 ```
+
+### Automate Hourly Exports
+
+You can keep your Markdown export fresh by running it from cron (macOS/Linux example):
+
+```bash
+crontab -e
+# Add the line below, updating paths to match your system:
+0 * * * * /usr/local/bin/granola notes --supabase "/Users/you/Library/Application Support/Granola/supabase.json" >> "$HOME/.granola.log" 2>&1
+```
+
+Cron runs non-interactively, so be sure to provide absolute paths for the `granola` binary, the Supabase file, and any config. The CLI only updates files whose `updated_at` timestamp is newer than what exists on disk, so each hourly job transfers new or changed notes only. Schedule a second entry with `granola transcripts` if you also want the raw transcript text files.
 
 ### Enable Debug Logging
 
