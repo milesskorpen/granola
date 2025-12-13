@@ -5,6 +5,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+
 INVALID_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 
 
