@@ -27,10 +27,19 @@ type Document struct {
 	UpdatedAt string `json:"updated_at"`
 }
 
+// Folder represents a document folder/list from Granola.
+type Folder struct {
+	ID       string `json:"id"`
+	Title    string `json:"title"`
+	ParentID string `json:"parent_document_list_id"`
+}
+
 // CacheData contains the parsed cache data.
 type CacheData struct {
-	Documents   map[string]Document                `json:"documents"`
-	Transcripts map[string][]TranscriptSegment     `json:"transcripts"`
+	Documents   map[string]Document            `json:"documents"`
+	Transcripts map[string][]TranscriptSegment `json:"transcripts"`
+	Folders     map[string]Folder              `json:"folders"`
+	DocFolders  map[string][]string            `json:"doc_folders"` // doc_id -> []folder_id
 }
 
 // ReadCache reads and parses the Granola cache file.
@@ -53,8 +62,10 @@ func ReadCache(cachePath string) (*CacheData, error) {
 	// Parse inner JSON (the actual cache data)
 	var inner struct {
 		State struct {
-			Documents   map[string]json.RawMessage `json:"documents"`
-			Transcripts map[string]json.RawMessage `json:"transcripts"`
+			Documents             map[string]json.RawMessage `json:"documents"`
+			Transcripts           map[string]json.RawMessage `json:"transcripts"`
+			DocumentListsMetadata map[string]json.RawMessage `json:"documentListsMetadata"`
+			DocumentLists         map[string][]string        `json:"documentLists"`
 		} `json:"state"`
 	}
 
@@ -85,9 +96,31 @@ func ReadCache(cachePath string) (*CacheData, error) {
 		transcripts[id] = segments
 	}
 
+	// Parse folders (documentListsMetadata)
+	folders := make(map[string]Folder)
+	for id, raw := range inner.State.DocumentListsMetadata {
+		var folder Folder
+		if err := json.Unmarshal(raw, &folder); err != nil {
+			// Skip folders that fail to parse
+			continue
+		}
+		folder.ID = id // Ensure ID is set
+		folders[id] = folder
+	}
+
+	// Build doc -> folders mapping by inverting documentLists (folder_id -> []doc_id)
+	docFolders := make(map[string][]string)
+	for folderID, docIDs := range inner.State.DocumentLists {
+		for _, docID := range docIDs {
+			docFolders[docID] = append(docFolders[docID], folderID)
+		}
+	}
+
 	return &CacheData{
 		Documents:   documents,
 		Transcripts: transcripts,
+		Folders:     folders,
+		DocFolders:  docFolders,
 	}, nil
 }
 
@@ -100,4 +133,20 @@ func GetDefaultCachePath() string {
 
 	// macOS path
 	return filepath.Join(home, "Library", "Application Support", "Granola", "cache-v3.json")
+}
+
+// GetFolderNames returns the folder names for a given document ID.
+func (c *CacheData) GetFolderNames(docID string) []string {
+	folderIDs := c.DocFolders[docID]
+	if len(folderIDs) == 0 {
+		return nil
+	}
+
+	names := make([]string, 0, len(folderIDs))
+	for _, folderID := range folderIDs {
+		if folder, ok := c.Folders[folderID]; ok && folder.Title != "" {
+			names = append(names, folder.Title)
+		}
+	}
+	return names
 }

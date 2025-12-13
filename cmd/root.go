@@ -43,6 +43,7 @@ func NewRootCmd(logger *log.Logger) *cobra.Command {
 
 	cmd.AddCommand(NewNotesCmd(logger))
 	cmd.AddCommand(NewTranscriptsCmd(logger))
+	cmd.AddCommand(NewExportCmd(logger))
 
 	return cmd
 }
