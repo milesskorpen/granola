@@ -37,6 +37,10 @@ def export_cmd(
         Optional[str],
         typer.Option("--output", help="Output directory for exported files"),
     ] = None,
+    exclude_folder: Annotated[
+        Optional[list[str]],
+        typer.Option("--exclude-folder", help="Folder to exclude (can be used multiple times)"),
+    ] = None,
 ) -> None:
     """Export combined notes and transcripts with folder structure.
 
@@ -44,10 +48,14 @@ def export_cmd(
     and combines them into .txt files organized by Granola folder structure.
 
     Documents in multiple folders will be duplicated into each folder.
-    Documents not in any folder will be placed in the root directory.
+    Documents not in any folder will be placed in the "Uncategorized" folder.
     Files are synced incrementally - only updated when the source changes.
     Deleted documents are removed from the output directory.
+
+    Use --exclude-folder to skip documents in specific folders. Documents in an excluded
+    folder will be skipped entirely, even if they also belong to other folders.
     """
+    excluded_folders = set(exclude_folder) if exclude_folder else set()
     from granola.cli.main import state, resolve_path
 
     # 1. Get supabase path
@@ -104,10 +112,15 @@ def export_cmd(
     export_docs: list[ExportDoc] = []
 
     for api_doc in api_docs:
-        all_doc_ids.add(api_doc.id)
-
         # Get folder names for this document
         folders = cache_data.get_folder_names(api_doc.id)
+
+        # Skip if document is in any excluded folder
+        if excluded_folders and any(f in excluded_folders for f in folders):
+            state.logger.debug(f"Skipping document '{api_doc.title}' - in excluded folder")
+            continue
+
+        all_doc_ids.add(api_doc.id)
 
         # Get transcript segments
         segments = cache_data.transcripts.get(api_doc.id, [])
@@ -167,10 +180,15 @@ def export_cmd(
         if shared_doc.id in all_doc_ids:
             continue
 
-        all_doc_ids.add(shared_doc.id)
-
         # Get folder names for this document
         folders = cache_data.get_folder_names(shared_doc.id)
+
+        # Skip if document is in any excluded folder
+        if excluded_folders and any(f in excluded_folders for f in folders):
+            state.logger.debug(f"Skipping shared document '{shared_doc.title}' - in excluded folder")
+            continue
+
+        all_doc_ids.add(shared_doc.id)
 
         # Get transcript segments (shared docs may have transcripts in cache)
         segments = cache_data.transcripts.get(shared_doc.id, [])
