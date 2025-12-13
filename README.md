@@ -1,4 +1,4 @@
-# Granola CLI
+# Granola Sync
 
 ```text
                                        _
@@ -13,285 +13,237 @@
 [![Python Version](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/github/license/theantichris/granola)](LICENSE)
 
-Export your [Granola](https://granola.ai) notes and transcripts to local files for backup, migration, or offline access.
+Automatically sync your [Granola](https://granola.ai) meeting notes to a local folder. Perfect for backing up to Google Drive, Dropbox, or any folder on your Mac.
 
-## Why Use This?
+## Features
 
-- **Own Your Data** - Keep local copies of all your meeting notes
-- **Full Transcripts** - Export complete, timestamped transcripts of your meetings
-- **Backup & Migration** - Safeguard your notes or move them to other tools
-- **Smart Updates** - Only exports new or changed content
-- **Fast & Simple** - One command to export everything
-
-## Installation
-
-### Install with pip (Recommended)
-
-```bash
-pip install granola-cli
-```
-
-### Install from Source
-
-```bash
-git clone https://github.com/theantichris/granola.git
-cd granola
-pip install -e .
-```
+- **Menu Bar App** - Lives in your menu bar (🥣) for easy access
+- **Auto Sync** - Automatically syncs on a schedule (5/15/30/60 minutes)
+- **Folder Organization** - Notes organized by your Granola folders
+- **Exclude Folders** - Skip private or sensitive folders from syncing
+- **Shared Notes** - Includes notes shared with you by teammates
+- **Smart Updates** - Only syncs changed files, removes deleted notes
+- **Start at Login** - Optionally start the app when you log in
 
 ## Quick Start
 
-### Export Your Notes
-
-Your notes are the AI-generated summaries and formatted content from Granola.
-
-**macOS/Linux:**
+### 1. Install
 
 ```bash
-granola notes --supabase "$HOME/Library/Application Support/Granola/supabase.json"
+# Install Homebrew (if needed)
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+# Install Python
+brew install python@3.12
+
+# Clone and install
+git clone https://github.com/theantichris/granola.git
+cd granola
+pip3 install -e .
 ```
 
-**Windows (PowerShell):**
-
-```powershell
-granola notes --supabase "$env:APPDATA\Granola\supabase.json"
-```
-
-Notes will be exported to `~/My Drive/z. Granola Notes/Markdown` as Markdown files.
-
-### Export Your Transcripts
-
-Transcripts are the raw, timestamped recordings of everything said in your meetings.
-
-**Note:** Transcripts are only available for meetings where you enabled audio recording.
-
-**macOS:**
+### 2. Run the Menu Bar App
 
 ```bash
-granola transcripts
+granola-menubar
 ```
 
-**Linux:**
+A 🥣 icon appears in your menu bar.
+
+### 3. Configure
+
+1. Click 🥣 → **Settings...** → Select your sync folder (e.g., Google Drive)
+2. Click 🥣 → **Manage Excluded Folders...** → Select folders to skip
+3. Click 🥣 → **Auto Sync** → Choose sync frequency
+4. Click 🥣 → **Start at Login** → Enable to run at startup
+5. Click 🥣 → **Sync Now** → Run your first sync!
+
+## Menu Bar Options
+
+| Option | Description |
+|--------|-------------|
+| **Sync Now** | Manually trigger a sync |
+| **Settings...** | Choose destination folder |
+| **Manage Excluded Folders...** | Select Granola folders to exclude |
+| **Auto Sync** | Set sync interval (5/15/30/60 min or disabled) |
+| **Start at Login** | Auto-start when you log in |
+| **Quit** | Close the app |
+
+## Command Line Usage
+
+You can also use the CLI directly:
 
 ```bash
-granola transcripts --cache "$HOME/.config/Granola/cache-v3.json"
+# Sync to a folder
+granola export --output ~/Google\ Drive/My\ Drive/Granola\ Notes/
+
+# Exclude specific folders
+granola export --output ~/path/to/folder --exclude-folder "Private" --exclude-folder "Archive"
+
+# Export just notes (as Markdown)
+granola notes --output ~/Documents/GranolaNotes
+
+# Export just transcripts
+granola transcripts --output ~/Documents/Transcripts
+
+# See all options
+granola --help
 ```
 
-**Windows (PowerShell):**
+### Environment Variables
 
-```powershell
-granola transcripts --cache "$env:APPDATA\Granola\cache-v3.json"
-```
-
-Transcripts will be exported to a `transcripts/` directory as text files.
-
-### Combined Export with Folder Structure
-
-Export both notes and transcripts together, organized by your Granola folders:
+Set these to avoid typing paths every time:
 
 ```bash
-granola export --supabase "$HOME/Library/Application Support/Granola/supabase.json"
-```
-
-## Where Granola Stores Your Data
-
-### Supabase Credentials File
-
-Granola uses a `supabase.json` file for API authentication:
-
-- **macOS**: `~/Library/Application Support/Granola/supabase.json`
-- **Linux**: `~/.config/Granola/supabase.json` or `~/.local/share/Granola/supabase.json`
-- **Windows**: `%APPDATA%\Granola\supabase.json`
-
-### Cache File (for Transcripts)
-
-Granola stores raw transcripts in a local cache file:
-
-- **macOS**: `~/Library/Application Support/Granola/cache-v3.json`
-- **Linux**: `~/.config/Granola/cache-v3.json` or `~/.local/share/Granola/cache-v3.json`
-- **Windows**: `%APPDATA%\Granola\cache-v3.json`
-
-## Common Options
-
-### Custom Output Directory
-
-```bash
-# Export notes to a specific location
-granola notes --output ~/Documents/MyNotes
-
-# Export transcripts to a specific location
-granola transcripts --output ~/Documents/MyTranscripts
-
-# Export combined to a specific location
-granola export --output ~/Documents/GranolaNotes
-```
-
-### Set Default Configuration
-
-Set the `SUPABASE_FILE` environment variable to avoid specifying the path every time:
-
-```bash
+# Add to ~/.zshrc
 export SUPABASE_FILE="$HOME/Library/Application Support/Granola/supabase.json"
+export PATH="/opt/homebrew/opt/python@3.12/libexec/bin:$PATH"
 ```
 
-Or create a `.env` file in your working directory:
+## Output Format
 
-```env
-SUPABASE_FILE=/Users/yourname/Library/Application Support/Granola/supabase.json
+### Combined Export (Default)
+
+Files are named: `YYYY-MM-DD_Title_id.txt`
+
+```
+Google Drive/
+└── Granola Notes/
+    ├── Work/
+    │   ├── 2025-01-15_Team Standup_abc123.txt
+    │   └── 2025-01-14_Project Review_def456.txt
+    ├── Personal/
+    │   └── 2025-01-13_1-on-1 with Manager_ghi789.txt
+    └── Uncategorized/
+        └── 2025-01-12_Quick Call_jkl012.txt
 ```
 
-Then simply run:
+Each file contains:
+- Header with title, ID, timestamps, and folder info
+- AI-generated notes (formatted as Markdown)
+- Full transcript with timestamps (if recording was enabled)
 
-```bash
-granola notes
-granola transcripts
-granola export
-```
-
-### Enable Debug Logging
-
-```bash
-granola notes --debug
-granola transcripts --debug
-granola export --debug
-```
-
-## Commands
-
-### `granola notes`
-
-Export AI-generated notes to Markdown files.
-
-```bash
-granola notes [OPTIONS]
-```
-
-**Options:**
-- `--timeout INTEGER` - HTTP timeout in seconds (default: 120)
-- `--output TEXT` - Output directory for exported Markdown files
-
-### `granola transcripts`
-
-Export raw transcripts to text files.
-
-```bash
-granola transcripts [OPTIONS]
-```
-
-**Options:**
-- `--cache TEXT` - Path to Granola cache file
-- `--output TEXT` - Output directory for exported transcript files
-
-### `granola export`
-
-Export combined notes and transcripts with folder structure.
-
-```bash
-granola export [OPTIONS]
-```
-
-**Options:**
-- `--timeout INTEGER` - HTTP timeout in seconds (default: 120)
-- `--cache TEXT` - Path to Granola cache file
-- `--output TEXT` - Output directory for exported files
-
-### Global Options
-
-- `--debug` - Enable debug logging
-- `--supabase TEXT` - Path to supabase.json file
-- `--version` - Show version and exit
-- `--help` - Show help and exit
-
-## What Gets Exported
-
-### Notes (Markdown Files)
-
-Each note becomes a separate `.md` file with:
-
-- **YAML frontmatter** - ID, timestamps, tags
-- **Title** - As a top-level heading
-- **Content** - Formatted as Markdown with headings, lists, etc.
-
-Example:
+### Notes Export (Markdown)
 
 ```markdown
 ---
 id: abc-123
-created: "2024-01-01T00:00:00Z"
-updated: "2024-01-02T00:00:00Z"
-tags:
-  - work
-  - planning
+created: "2025-01-15T14:00:00Z"
+updated: "2025-01-15T15:00:00Z"
 ---
 
-# Meeting Notes
+# Team Standup
 
 ## Key Points
 
-- First important point
-- Second important point
+- Sprint progress on track
+- New feature launching next week
 ```
 
-### Transcripts (Text Files)
+### Transcripts Export (Text)
 
-Each transcript becomes a `.txt` file with:
-
-- **Header** - Title, ID, timestamps, segment count
-- **Timestamped dialogue** - `[HH:MM:SS] Speaker: Text`
-- **Speaker labels** - "System" (others) or "You" (your microphone)
-
-Example:
-
-```text
+```
 ================================================================================
-Team Sync Meeting
+Team Standup
 ID: abc-123
-Created: 2024-01-01T14:00:00.000Z
-Segments: 142
+Created: 2025-01-15T14:00:00.000Z
 ================================================================================
 
-[14:00:04] System: Good morning everyone, how's it going?
-[14:00:06] You: Good morning! Ready to start.
+[14:00:04] System: Good morning everyone
+[14:00:06] You: Morning! Let's get started
+[14:00:10] System: I'll share my screen
+```
+
+## Configuration
+
+Settings are stored in `~/.config/granola/settings.json`:
+
+```json
+{
+  "output_folder": "/Users/you/Google Drive/My Drive/Granola Notes",
+  "excluded_folders": ["Private", "Archive"],
+  "sync_interval_minutes": 15,
+  "start_at_login": true
+}
 ```
 
 ## Troubleshooting
 
-### "Failed to read supabase file"
+### "command not found: granola-menubar"
 
-- Make sure Granola is installed and you've logged in at least once
-- Check that the path to `supabase.json` is correct for your OS
-- Try running Granola app first, then export
+Add Python to your PATH:
 
-### "No transcripts found"
+```bash
+echo 'export PATH="/opt/homebrew/opt/python@3.12/libexec/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+```
 
-- Transcripts are only available for meetings where audio recording was enabled
-- Check that the cache file path is correct
-- Make sure you've had at least one meeting with recording enabled
+### "supabase.json not found"
 
-### "Permission denied"
+Make sure Granola is installed and you've signed in. The app looks for:
+```
+~/Library/Application Support/Granola/supabase.json
+```
 
-- Make sure you have read access to the Granola files
-- Try running without `sudo` - it's not needed
+### Sync not working
 
-### Need More Help?
+Check the logs:
+```bash
+cat ~/.config/granola/sync.log
+cat ~/.config/granola/sync.error.log
+```
 
-- Check the `--help` output: `granola --help`
-- [Open an issue](https://github.com/theantichris/granola/issues) on GitHub
+### App won't start at login
+
+Toggle "Start at Login" off and on again, or check:
+```bash
+launchctl list | grep granola
+```
+
+## Uninstalling
+
+```bash
+# Quit the app (click 🥣 → Quit)
+
+# Disable start at login (click 🥣 → Start at Login to uncheck)
+
+# Remove the package
+pip3 uninstall granola-cli
+
+# Remove config files (optional)
+rm -rf ~/.config/granola
+rm ~/Library/LaunchAgents/com.granola.menubar.plist
+```
 
 ---
 
-## For Contributors & Developers
+## For Developers
 
-The sections below are for those who want to contribute to the project or build from source.
+### Project Structure
+
+```
+granola/
+├── src/granola/
+│   ├── cli/              # CLI commands (Typer)
+│   │   ├── main.py       # Root command
+│   │   ├── notes.py      # Notes export
+│   │   ├── transcripts.py # Transcripts export
+│   │   └── export.py     # Combined export
+│   ├── menubar/          # Menu bar app (rumps)
+│   │   ├── app.py        # Main app
+│   │   ├── settings.py   # Settings management
+│   │   └── launchd.py    # launchd helpers
+│   ├── api/              # Granola API client
+│   ├── cache/            # Cache file reader
+│   ├── formatters/       # Output formatters
+│   ├── prosemirror/      # ProseMirror parser
+│   └── writers/          # File sync logic
+├── tests/
+├── pyproject.toml
+└── README.md
+```
 
 ### Development Setup
-
-**Requirements:**
-
-- Python 3.11 or higher
-- pip
-
-**Clone and install in development mode:**
 
 ```bash
 git clone https://github.com/theantichris/granola.git
@@ -299,113 +251,32 @@ cd granola
 pip install -e ".[dev]"
 ```
 
-### Project Structure
-
-```text
-granola/
-├── src/
-│   └── granola/
-│       ├── cli/              # CLI commands (Typer)
-│       │   ├── main.py       # Root command and configuration
-│       │   ├── notes.py      # Notes export (API-based)
-│       │   ├── transcripts.py # Transcripts export (cache-based)
-│       │   └── export.py     # Combined export with folders
-│       ├── api/              # Granola API client
-│       ├── cache/            # Cache file reader
-│       ├── config/           # Pydantic Settings
-│       ├── formatters/       # Document formatters
-│       ├── prosemirror/      # ProseMirror JSON parser
-│       ├── writers/          # File system operations
-│       └── utils/            # Utility functions
-├── tests/                    # Test files
-├── pyproject.toml            # Project configuration
-├── README.md                 # This file
-├── CLAUDE.md                 # AI assistant guidelines
-└── LICENSE                   # MIT License
-```
-
-### Development Commands
+### Commands
 
 ```bash
-# Run the CLI
-granola --help
-python -m granola --help
-
 # Run tests
 pytest
-
-# Run tests with coverage
-pytest --cov=granola
 
 # Run linter
 ruff check .
 
-# Run type checker
+# Type check
 mypy src/granola
-
-# Format code
-ruff format .
-```
-
-### Testing
-
-The project uses pytest for testing:
-
-```bash
-pytest                    # All tests
-pytest -v                 # Verbose output
-pytest --cov=granola      # With coverage
 ```
 
 ### Key Dependencies
 
 - [Typer](https://typer.tiangolo.com/) - CLI framework
+- [rumps](https://github.com/jaredks/rumps) - macOS menu bar apps
 - [Pydantic](https://docs.pydantic.dev/) - Data validation
-- [Pydantic Settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/) - Configuration management
 - [httpx](https://www.python-httpx.org/) - HTTP client
-- [Rich](https://rich.readthedocs.io/) - Terminal formatting
-
-### Architecture
-
-**Notes Export (API-based):**
-
-1. Read Supabase credentials from local file
-2. Authenticate with Granola API
-3. Fetch all documents as JSON (with pagination)
-4. Convert ProseMirror JSON to Markdown
-5. Write files with YAML frontmatter
-
-**Transcripts Export (Cache-based):**
-
-1. Read local cache file (double-JSON encoded)
-2. Extract transcript segments by document ID
-3. Format segments with timestamps and speakers
-4. Write text files with metadata headers
-
-**Combined Export:**
-
-1. Fetch notes from API and transcripts from cache
-2. Merge data and organize by folder structure
-3. Sync to filesystem with incremental updates
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT License - see [LICENSE](LICENSE) for details.
 
 ## Acknowledgments
 
-- [Granola](https://granola.so) - The amazing note-taking app this tool exports from
-- [Typer](https://typer.tiangolo.com/) - For the excellent CLI framework
-- [Pydantic](https://docs.pydantic.dev/) - For data validation and settings
-
-## Support
-
-For issues, questions, or feature requests:
-
-- [Open an issue](https://github.com/theantichris/granola/issues) on GitHub
-- Check existing issues for solutions
-- Include debug output (`--debug`) when reporting problems
-
----
-
-Built with love by the community
+- [Granola](https://granola.ai) - The note-taking app this syncs from
+- [rumps](https://github.com/jaredks/rumps) - Menu bar framework
+- [Typer](https://typer.tiangolo.com/) - CLI framework
