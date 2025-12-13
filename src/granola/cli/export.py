@@ -41,6 +41,10 @@ def export_cmd(
         Optional[list[str]],
         typer.Option("--exclude-folder", help="Folder to exclude (can be used multiple times)"),
     ] = None,
+    supabase: Annotated[
+        Optional[str],
+        typer.Option("--supabase", help="Path to supabase.json file"),
+    ] = None,
 ) -> None:
     """Export combined notes and transcripts with folder structure.
 
@@ -58,8 +62,8 @@ def export_cmd(
     excluded_folders = set(exclude_folder) if exclude_folder else set()
     from granola.cli.main import state, resolve_path
 
-    # 1. Get supabase path
-    supabase_path = state.supabase
+    # 1. Get supabase path (command option > global state)
+    supabase_path = resolve_path(supabase) if supabase else state.supabase
     if not supabase_path:
         console.print(
             "[red]Error:[/red] supabase.json path not set. "
