@@ -1,6 +1,5 @@
 """Wholesail Manager menu bar application."""
 
-import json
 import subprocess
 import sys
 import threading
@@ -8,33 +7,23 @@ from datetime import datetime
 from pathlib import Path
 
 import rumps
+from AppKit import NSApp
 from importlib import resources as importlib_resources
 
-from granola.menubar.settings import (
-    Settings,
-    get_available_folders,
-    get_launchd_plist_path,
-)
+from granola.menubar.settings_store import SettingsStore
 
 # Launchd plist for starting at login
 LOGIN_PLIST_PATH = Path.home() / "Library" / "LaunchAgents" / "com.granola.menubar.plist"
 LOGIN_PLIST_LABEL = "com.granola.menubar"
 
 
-def notify(title: str, subtitle: str, message: str, is_error: bool = False) -> None:
-    """Send a notification without sound.
-
-    Args:
-        title: Notification title.
-        subtitle: Notification subtitle.
-        message: Notification message.
-        is_error: Whether this is an error notification.
-    """
-    rumps.notification(title, subtitle, message, sound=False)
-
-
 # Global reference to app for notification level checking
 _app_instance: "WholesailManagerApp | None" = None
+
+
+def notify(title: str, subtitle: str, message: str) -> None:
+    """Send a notification without sound."""
+    rumps.notification(title, subtitle, message, sound=False)
 
 
 def should_notify(is_error: bool = False) -> bool:
@@ -49,7 +38,7 @@ def should_notify(is_error: bool = False) -> bool:
     if _app_instance is None:
         return True
 
-    level = _app_instance.settings.notification_level
+    level = _app_instance.store.notification_level
     if level == "none":
         return False
     if level == "errors":
@@ -62,22 +51,23 @@ class WholesailManagerApp(rumps.App):
     """Menu bar app for Wholesail Manager."""
 
     def __init__(self):
-        # Try to load app icon from various locations
+        # Try to load menu bar icon from various locations
+        # Menu bar icons should be small (22x22 or 44x44 for @2x)
         icon_path: str | None = None
 
         # List of potential icon locations to check
         icon_candidates = [
-            # Project root (for development)
-            Path(__file__).parent.parent.parent.parent / "app_icon.png",
-            # Packaged assets directory
-            Path(__file__).parent / "assets" / "app_icon.png",
+            # Packaged assets directory (menubar-sized icon)
+            Path(__file__).parent / "assets" / "menubar_icon.png",
             # macOS app bundle Resources directory
-            Path(sys.executable).parent.parent / "Resources" / "app_icon.png",
+            Path(sys.executable).parent.parent / "Resources" / "menubar_icon.png",
+            # Fallback to full-size app icon
+            Path(__file__).parent.parent.parent.parent / "app_icon.png",
         ]
 
         # Try importlib resources for packaged distribution
         try:
-            icon_res = importlib_resources.files("granola.menubar").joinpath("assets/app_icon.png")
+            icon_res = importlib_resources.files("granola.menubar").joinpath("assets/menubar_icon.png")
             if hasattr(icon_res, "is_file") and icon_res.is_file():
                 icon_candidates.insert(0, Path(str(icon_res)))
         except Exception:
@@ -87,9 +77,14 @@ class WholesailManagerApp(rumps.App):
         for candidate in icon_candidates:
             if candidate.exists():
                 icon_path = str(candidate)
+                print(f"[DEBUG] Found menu bar icon: {icon_path}")
                 break
+            else:
+                print(f"[DEBUG] Icon not found at: {candidate}")
 
         self._using_icon = icon_path is not None
+        if not self._using_icon:
+            print("[DEBUG] No icon found, using emoji fallback")
 
         super().__init__(
             "Wholesail Manager",
@@ -98,12 +93,16 @@ class WholesailManagerApp(rumps.App):
             quit_button=None,  # We'll add our own
         )
 
-        self.settings = Settings.load()
+        # Use the shared settings store
+        self.store = SettingsStore.shared()
         self.syncing = False
 
         # Set global reference for notification level checking
         global _app_instance
         _app_instance = self
+
+        # Subscribe to settings changes
+        self.store.subscribe(self._on_settings_changed)
 
         # Build menu
         self.status_item = rumps.MenuItem("Status: Ready")
@@ -129,7 +128,7 @@ class WholesailManagerApp(rumps.App):
             None,  # Separator
             rumps.MenuItem("Sync Now", callback=self.sync_now),
             None,  # Separator
-            rumps.MenuItem("Settings...", callback=self.open_settings_panel),
+            rumps.MenuItem("Settings...", callback=self.open_settings),
             self.start_at_login_item,
             None,  # Separator
             rumps.MenuItem("Restart", callback=self.restart_app),
@@ -139,13 +138,18 @@ class WholesailManagerApp(rumps.App):
         # Start auto-sync timer if enabled
         self._setup_timer()
 
+    def _on_settings_changed(self, key: str) -> None:
+        """Handle settings changes from the preferences window."""
+        if key in ("sync_interval_minutes", "auto_sync_enabled"):
+            self._setup_timer()
+
     def _get_last_sync_text(self) -> str:
         """Get formatted last sync text."""
-        if self.settings.last_sync_time:
+        if self.store.last_sync_time:
             try:
-                last = datetime.fromisoformat(self.settings.last_sync_time)
+                last = datetime.fromisoformat(self.store.last_sync_time)
                 time_str = last.strftime("%-I:%M %p").lower()  # e.g., "3:25 pm"
-                status = "✓" if self.settings.last_sync_status == "success" else "✗"
+                status = "✓" if self.store.last_sync_status == "success" else "✗"
                 return f"Last sync: {status} {time_str}"
             except ValueError:
                 pass
@@ -153,23 +157,23 @@ class WholesailManagerApp(rumps.App):
 
     def _get_last_sync_stats_text(self) -> str:
         """Get formatted sync stats text."""
-        if self.settings.last_sync_status == "never":
+        if self.store.last_sync_status == "never":
             return "Stats: No sync yet"
 
         parts = []
-        if self.settings.last_sync_added > 0:
-            parts.append(f"{self.settings.last_sync_added} added")
-        if self.settings.last_sync_updated > 0:
-            parts.append(f"{self.settings.last_sync_updated} updated")
-        if self.settings.last_sync_moved > 0:
-            parts.append(f"{self.settings.last_sync_moved} moved")
-        if self.settings.last_sync_deleted > 0:
-            parts.append(f"{self.settings.last_sync_deleted} deleted")
+        if self.store.last_sync_added > 0:
+            parts.append(f"{self.store.last_sync_added} added")
+        if self.store.last_sync_updated > 0:
+            parts.append(f"{self.store.last_sync_updated} updated")
+        if self.store.last_sync_moved > 0:
+            parts.append(f"{self.store.last_sync_moved} moved")
+        if self.store.last_sync_deleted > 0:
+            parts.append(f"{self.store.last_sync_deleted} deleted")
 
         if parts:
             return f"Stats: {', '.join(parts)}"
-        elif self.settings.last_sync_skipped > 0:
-            return f"Stats: {self.settings.last_sync_skipped} unchanged"
+        elif self.store.last_sync_skipped > 0:
+            return f"Stats: {self.store.last_sync_skipped} unchanged"
         else:
             return "Stats: No changes"
 
@@ -179,8 +183,8 @@ class WholesailManagerApp(rumps.App):
             self._timer.stop()
             self._timer = None
 
-        if self.settings.sync_interval_minutes > 0:
-            interval = self.settings.sync_interval_minutes * 60
+        if self.store.auto_sync_enabled and self.store.sync_interval_minutes > 0:
+            interval = self.store.sync_interval_minutes * 60
             self._timer = rumps.Timer(self._auto_sync, interval)
             self._timer.start()
 
@@ -204,7 +208,7 @@ class WholesailManagerApp(rumps.App):
 
     def _do_sync(self) -> None:
         """Perform the actual sync in a background thread."""
-        if not self.settings.output_folder:
+        if not self.store.output_folder:
             if should_notify(is_error=True):
                 notify(
                     "Wholesail Manager",
@@ -224,29 +228,43 @@ class WholesailManagerApp(rumps.App):
 
                 # Get enabled webhook configs
                 webhook_configs = [
-                    w for w in self.settings.webhooks
+                    w for w in self.store.webhooks
                     if w.get("enabled", True)
                 ]
 
                 # Run export directly
                 result = run_export(
-                    output_folder=self.settings.output_folder,
-                    supabase_path=self.settings.supabase_path or None,
-                    cache_path=self.settings.cache_path or None,
-                    excluded_folders=list(self.settings.excluded_folders),
+                    output_folder=self.store.output_folder,
+                    supabase_path=self.store.supabase_path or None,
+                    cache_path=self.store.cache_path or None,
+                    excluded_folders=list(self.store.excluded_folders),
+                    excluded_folders_updated=self.store.excluded_folders_updated,
                     webhook_configs=webhook_configs if webhook_configs else None,
                     timeout=120,
                 )
 
                 # Update status
-                self.settings.last_sync_time = datetime.now().isoformat()
+                self.store.last_sync_time = datetime.now().isoformat()
                 if result.success:
-                    self.settings.last_sync_status = "success"
-                    self.settings.last_sync_added = result.added
-                    self.settings.last_sync_updated = result.updated
-                    self.settings.last_sync_moved = result.moved
-                    self.settings.last_sync_deleted = result.deleted
-                    self.settings.last_sync_skipped = result.skipped
+                    self.store.last_sync_status = "success"
+                    self.store.update_sync_stats(
+                        added=result.added,
+                        updated=result.updated,
+                        moved=result.moved,
+                        deleted=result.deleted,
+                        skipped=result.skipped,
+                    )
+
+                    # Sync exclusions from sync folder config back to local settings
+                    # This handles the case where another computer updated exclusions
+                    if result.effective_excluded_folders is not None:
+                        local_excluded = set(self.store.excluded_folders)
+                        effective_excluded = set(result.effective_excluded_folders)
+                        if local_excluded != effective_excluded:
+                            # Update local settings without changing timestamp
+                            # (the sync folder config is authoritative)
+                            self.store._data.excluded_folders = list(effective_excluded)
+                            self.store._save_atomic()
 
                     # Build message
                     parts = []
@@ -259,41 +277,33 @@ class WholesailManagerApp(rumps.App):
                     if result.deleted > 0:
                         parts.append(f"{result.deleted} deleted")
                     if parts:
-                        self.settings.last_sync_message = ", ".join(parts)
+                        self.store.last_sync_message = ", ".join(parts)
                     else:
-                        self.settings.last_sync_message = f"{result.skipped} unchanged"
+                        self.store.last_sync_message = f"{result.skipped} unchanged"
 
                     if should_notify(is_error=False):
                         notify(
                             "Wholesail Manager",
                             "Sync completed",
-                            self.settings.last_sync_message,
+                            self.store.last_sync_message,
                         )
                 else:
-                    self.settings.last_sync_status = "error"
-                    self.settings.last_sync_message = result.error_message[:100]
-                    # Reset stats on error
-                    self.settings.last_sync_added = 0
-                    self.settings.last_sync_updated = 0
-                    self.settings.last_sync_moved = 0
-                    self.settings.last_sync_deleted = 0
-                    self.settings.last_sync_skipped = 0
+                    self.store.last_sync_status = "error"
+                    self.store.last_sync_message = result.error_message[:100]
+                    self.store.update_sync_stats()  # Reset stats
                     if should_notify(is_error=True):
                         notify(
                             "Wholesail Manager",
                             "Sync failed",
-                            self.settings.last_sync_message,
+                            self.store.last_sync_message,
                         )
-
-                self.settings.save()
 
             except Exception as e:
                 import traceback
-                self.settings.last_sync_status = "error"
-                # Include traceback in error message for debugging
+                self.store.last_sync_status = "error"
                 tb = traceback.format_exc()
-                self.settings.last_sync_message = f"{e}: {tb}"[:2000]
-                self.settings.save()
+                self.store.last_sync_message = f"{e}: {tb}"[:2000]
+                self.store.save()
                 if should_notify(is_error=True):
                     notify("Wholesail Manager", "Sync failed", str(e)[:100])
 
@@ -303,54 +313,15 @@ class WholesailManagerApp(rumps.App):
                 self.last_sync_item.title = self._get_last_sync_text()
                 self.last_sync_stats_item.title = self._get_last_sync_stats_text()
                 if not self._using_icon:
-                    self.title = "🥣"
+                    self.title = "🚢"
 
         thread = threading.Thread(target=sync_thread, daemon=True)
         thread.start()
 
-    def open_settings_panel(self, _) -> None:
-        """Open the settings panel as a separate process."""
-        try:
-            # In a py2app bundle, sys.executable points to the app bundle
-            # We need to find the actual Python interpreter
-            python_exe = sys.executable
-
-            # Check if we're in a .app bundle
-            if ".app/Contents/MacOS" in python_exe:
-                # Use the python executable in the same directory
-                bundle_python = Path(python_exe).parent / "python"
-                if bundle_python.exists():
-                    python_exe = str(bundle_python)
-
-            subprocess.Popen(
-                [
-                    python_exe,
-                    "-m",
-                    "granola.menubar.settings_panel",
-                    "--cache-path",
-                    self.settings.cache_path or "",
-                ],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-        except Exception as e:
-            if should_notify(is_error=True):
-                notify(
-                    "Wholesail Manager",
-                    "Error opening settings",
-                    str(e)[:100],
-                )
-
-        # Schedule a reload of settings after a delay
-        # to pick up any changes made in the panel
-        def reload_settings_later():
-            import time
-            time.sleep(1)
-            self.settings = Settings.load()
-            self._setup_timer()  # Restart timer with potentially new interval
-
-        thread = threading.Thread(target=reload_settings_later, daemon=True)
-        thread.start()
+    def open_settings(self, _) -> None:
+        """Open the native preferences window."""
+        from granola.menubar.preferences_window import show_preferences_window
+        show_preferences_window()
 
     def _is_login_item_installed(self) -> bool:
         """Check if the app is set to start at login."""
@@ -379,10 +350,8 @@ class WholesailManagerApp(rumps.App):
 
     def _install_login_item(self) -> None:
         """Install launchd plist to start at login."""
-        # Find the granola-menubar script
         script_path = Path(sys.executable).parent / "granola-menubar"
         if not script_path.exists():
-            # Fallback to module execution
             program_args = f"""    <array>
         <string>{sys.executable}</string>
         <string>-m</string>
@@ -417,13 +386,9 @@ class WholesailManagerApp(rumps.App):
 </dict>
 </plist>
 """
-        # Ensure LaunchAgents directory exists
         LOGIN_PLIST_PATH.parent.mkdir(parents=True, exist_ok=True)
-
-        # Write plist
         LOGIN_PLIST_PATH.write_text(plist_content)
 
-        # Load it
         subprocess.run(
             ["launchctl", "load", str(LOGIN_PLIST_PATH)],
             capture_output=True,
@@ -432,12 +397,10 @@ class WholesailManagerApp(rumps.App):
     def _uninstall_login_item(self) -> None:
         """Remove launchd plist for login."""
         if LOGIN_PLIST_PATH.exists():
-            # Unload first
             subprocess.run(
                 ["launchctl", "unload", str(LOGIN_PLIST_PATH)],
                 capture_output=True,
             )
-            # Remove file
             try:
                 LOGIN_PLIST_PATH.unlink()
             except Exception:
@@ -445,15 +408,12 @@ class WholesailManagerApp(rumps.App):
 
     def restart_app(self, _) -> None:
         """Restart the application."""
-        # Get the path to the current script/executable
         script_path = Path(sys.executable).parent / "granola-menubar"
         if not script_path.exists():
-            # Fallback to module execution
             cmd = [sys.executable, "-m", "granola.menubar.app"]
         else:
             cmd = [str(script_path)]
 
-        # Start a new instance
         subprocess.Popen(
             cmd,
             stdout=subprocess.DEVNULL,
@@ -461,7 +421,6 @@ class WholesailManagerApp(rumps.App):
             start_new_session=True,
         )
 
-        # Quit the current instance
         rumps.quit_application()
 
     def quit_app(self, _) -> None:

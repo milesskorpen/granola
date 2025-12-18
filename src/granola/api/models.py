@@ -118,3 +118,20 @@ class GranolaResponse(BaseModel):
     """API response containing documents."""
 
     docs: list[Document] = Field(default_factory=list)
+
+
+class DocumentList(BaseModel):
+    """A document list (folder) from the Granola API."""
+
+    id: str
+    title: Optional[str] = None
+    description: Optional[str] = None
+    parent_document_list_id: Optional[str] = None
+    documents: list[dict[str, Any]] = Field(default_factory=list)
+    document_count: int = 0
+
+
+class DocumentListsResponse(BaseModel):
+    """API response containing document lists."""
+
+    lists: list[DocumentList] = Field(default_factory=list)

@@ -58,8 +58,8 @@ setup(
     packages=find_packages(where="src"),
     package_dir={"": "src"},
     package_data={
-        # Include the menubar icon so importlib.resources can load it
-        "granola.menubar": ["assets/app_icon.png"],
+        # Include the menubar icons so importlib.resources can load them
+        "granola.menubar": ["assets/menubar_icon.png", "assets/menubar_icon@2x.png"],
     },
     include_package_data=True,
     data_files=DATA_FILES,

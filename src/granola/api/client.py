@@ -5,12 +5,13 @@ import ssl
 import certifi
 import httpx
 
-from granola.api.models import Document, GranolaResponse
+from granola.api.models import Document, DocumentList, DocumentListsResponse, GranolaResponse
 
 # Constants matching the Go implementation
 USER_AGENT = "Granola/5.354.0"
 X_CLIENT_VERSION = "5.354.0"
 API_URL = "https://api.granola.ai/v2/get-documents"
+DOCUMENT_LISTS_URL = "https://api.granola.ai/v2/get-document-lists"
 
 
 def _get_ssl_context() -> ssl.SSLContext:
@@ -98,3 +99,67 @@ class GranolaClient:
                 offset += limit
 
         return documents
+
+    def get_document_lists(self) -> list[DocumentList]:
+        """Fetch all document lists (folders) from the API.
+
+        Returns:
+            List of document lists with their document IDs.
+
+        Raises:
+            APIError: If the API request fails.
+        """
+        with httpx.Client(timeout=self.timeout, verify=_get_ssl_context()) as client:
+            try:
+                response = client.post(
+                    DOCUMENT_LISTS_URL,
+                    headers=self.headers,
+                    json={},
+                )
+                response.raise_for_status()
+
+            except httpx.HTTPStatusError as e:
+                body_preview = e.response.text[:200] if e.response.text else ""
+                raise APIError(
+                    f"API request failed: status={e.response.status_code}, body={body_preview}"
+                ) from e
+
+            except httpx.RequestError as e:
+                raise APIError(f"API request failed: {e}") from e
+
+            # Parse response
+            try:
+                data = response.json()
+                lists_response = DocumentListsResponse.model_validate(data)
+            except Exception as e:
+                raise APIError(f"Failed to parse document lists response: {e}") from e
+
+            return lists_response.lists
+
+    def get_doc_folder_mapping(self) -> tuple[dict[str, str], dict[str, list[str]]]:
+        """Get folder information and document-to-folder mapping from API.
+
+        Returns:
+            Tuple of:
+                - folders: dict mapping folder_id -> folder_title
+                - doc_folders: dict mapping doc_id -> list of folder_titles
+        """
+        lists = self.get_document_lists()
+
+        folders: dict[str, str] = {}
+        doc_folders: dict[str, list[str]] = {}
+
+        for lst in lists:
+            folder_id = lst.id
+            folder_title = lst.title or "Unnamed"
+            folders[folder_id] = folder_title
+
+            # Map each document to this folder
+            for doc in lst.documents:
+                doc_id = doc.get("id", "")
+                if doc_id:
+                    if doc_id not in doc_folders:
+                        doc_folders[doc_id] = []
+                    doc_folders[doc_id].append(folder_title)
+
+        return folders, doc_folders

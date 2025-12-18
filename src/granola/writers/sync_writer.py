@@ -48,15 +48,22 @@ class SyncResult:
 class SyncWriter:
     """Handles syncing documents to the filesystem with folder structure."""
 
-    def __init__(self, output_dir: Path, logger: logging.Logger | None = None):
+    def __init__(
+        self,
+        output_dir: Path,
+        logger: logging.Logger | None = None,
+        excluded_folders: list[str] | None = None,
+    ):
         """Initialize the sync writer.
 
         Args:
             output_dir: Root directory for exported files.
             logger: Optional logger for debug output.
+            excluded_folders: Folder names to exclude from sync (files will be deleted).
         """
         self.output_dir = output_dir
         self.logger = logger or logging.getLogger(__name__)
+        self.excluded_folders = set(excluded_folders or [])
 
     def sync(
         self, docs: list[ExportDoc], all_doc_ids: set[str]
@@ -64,6 +71,7 @@ class SyncWriter:
         """Synchronize documents to the output directory with folder structure.
 
         Handles adding, updating, moving, and deleting files as needed.
+        Respects excluded_folders - files in excluded folders are deleted.
 
         Args:
             docs: Documents to sync.
@@ -78,12 +86,39 @@ class SyncWriter:
         # Create output directory if it doesn't exist
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
-        # Step 1: Scan existing files and build ID -> paths mapping
+        # Step 1: Delete all files in excluded folders
+        # This ensures exclusions sync across computers - we "own" the sync folder
+        stats.deleted += self._delete_excluded_folders()
+
+        # Step 2: Scan existing files and build ID -> paths mapping
         existing_files = self._scan_existing_files()
 
-        # Step 2: Process each document
+        # Step 3: Process each document (filtering out excluded folders)
         for doc in docs:
-            doc_stats, doc_results = self._process_document(doc, existing_files)
+            # Filter out excluded folders from the doc's folder list
+            filtered_folders = [
+                f for f in doc.folders if f not in self.excluded_folders
+            ]
+
+            # If doc was ONLY in excluded folders, it now has no folders
+            # (will go to Uncategorized, but we might want to skip it entirely)
+            # For now, we keep it in Uncategorized - user can exclude that too
+
+            # Create a copy of doc with filtered folders
+            filtered_doc = ExportDoc(
+                id=doc.id,
+                title=doc.title,
+                created_at=doc.created_at,
+                updated_at=doc.updated_at,
+                content=doc.content,
+                folders=filtered_folders,
+                has_notes=doc.has_notes,
+                has_transcript=doc.has_transcript,
+                notes_content=doc.notes_content,
+                transcript_content=doc.transcript_content,
+            )
+
+            doc_stats, doc_results = self._process_document(filtered_doc, existing_files)
             stats.added += doc_stats.added
             stats.updated += doc_stats.updated
             stats.moved += doc_stats.moved
@@ -91,7 +126,7 @@ class SyncWriter:
             stats.skipped += doc_stats.skipped
             results.extend(doc_results)
 
-        # Step 3: Delete orphaned files (files whose doc IDs are not in all_doc_ids)
+        # Step 4: Delete orphaned files (files whose doc IDs are not in all_doc_ids)
         for doc_id, paths in existing_files.items():
             # Use short ID matching (first 8 chars)
             if not any(full_id.startswith(doc_id) for full_id in all_doc_ids):
@@ -103,10 +138,36 @@ class SyncWriter:
                     except OSError as e:
                         self.logger.warning(f"Failed to delete orphan {path}: {e}")
 
-        # Step 4: Clean up empty folders
+        # Step 5: Clean up empty folders
         self._clean_empty_folders()
 
         return stats, results
+
+    def _delete_excluded_folders(self) -> int:
+        """Delete all contents of excluded folders.
+
+        Returns:
+            Number of files deleted.
+        """
+        deleted_count = 0
+
+        for folder_name in self.excluded_folders:
+            sanitized_name = _sanitize_folder_name(folder_name)
+            folder_path = self.output_dir / sanitized_name
+
+            if folder_path.exists() and folder_path.is_dir():
+                self.logger.debug(f"Deleting excluded folder: {folder_path}")
+                # Delete all files in the folder
+                for file_path in folder_path.rglob("*"):
+                    if file_path.is_file():
+                        try:
+                            file_path.unlink()
+                            deleted_count += 1
+                            self.logger.debug(f"Deleted: {file_path}")
+                        except OSError as e:
+                            self.logger.warning(f"Failed to delete {file_path}: {e}")
+
+        return deleted_count
 
     def _scan_existing_files(self) -> dict[str, list[Path]]:
         """Walk the output directory and build a map of doc ID -> file paths.

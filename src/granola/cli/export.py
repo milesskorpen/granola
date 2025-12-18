@@ -17,6 +17,12 @@ from granola.api.models import ProseMirrorDoc
 from granola.cache.reader import SharedDocument, get_default_cache_path, read_cache
 from granola.formatters.combined import format_combined, format_transcript
 from granola.prosemirror.converter import to_markdown
+from granola.sync_config import (
+    SyncConfig,
+    get_effective_exclusions,
+    load_sync_config,
+    save_sync_config,
+)
 from granola.webhooks import WebhookDispatcher, WebhookPayload
 from granola.writers.sync_writer import ExportDoc, SyncResult, SyncStats, SyncWriter
 
@@ -35,6 +41,9 @@ class ExportResult:
     skipped: int = 0
     error_message: str = ""
     webhook_summary: str = ""
+    # Effective exclusions (merged from local + sync folder)
+    # App should update local settings if these differ
+    effective_excluded_folders: list[str] | None = None
 
 
 def run_export(
@@ -42,6 +51,7 @@ def run_export(
     supabase_path: str | None = None,
     cache_path: str | None = None,
     excluded_folders: list[str] | None = None,
+    excluded_folders_updated: str | None = None,
     webhook_configs: list[dict] | None = None,
     timeout: int = 120,
     logger: logging.Logger | None = None,
@@ -52,7 +62,8 @@ def run_export(
         output_folder: Directory to export files to.
         supabase_path: Path to supabase.json file.
         cache_path: Path to Granola cache file.
-        excluded_folders: List of folder names to exclude.
+        excluded_folders: List of folder names to exclude (from local settings).
+        excluded_folders_updated: ISO timestamp of when local exclusions were updated.
         webhook_configs: List of webhook configuration dicts.
         timeout: HTTP timeout in seconds.
         logger: Optional logger for debug output.
@@ -61,7 +72,20 @@ def run_export(
         ExportResult with stats and any error information.
     """
     logger = logger or logging.getLogger(__name__)
-    excluded_set = set(excluded_folders) if excluded_folders else set()
+    output_dir = Path(output_folder)
+
+    # Debug: log input parameters
+    logger.info(f"run_export called with excluded_folders={excluded_folders}, excluded_folders_updated={excluded_folders_updated}")
+
+    # Load and merge exclusions from sync folder config
+    # This allows exclusions to sync across multiple computers
+    effective_excluded, sync_config = get_effective_exclusions(
+        output_dir,
+        excluded_folders or [],
+        excluded_folders_updated,
+    )
+    excluded_set = set(effective_excluded)
+    logger.info(f"Effective excluded folders: {effective_excluded}")
 
     # 1. Resolve supabase path
     if not supabase_path:
@@ -98,21 +122,52 @@ def run_export(
 
     logger.info(f"Retrieved {len(api_docs)} documents from API")
 
-    # 4. Read cache for transcripts and folders
+    # 3b. Fetch folder assignments from API (not cache - cache may be corrupted)
+    api_doc_folders: dict[str, list[str]] = {}
+    api_folders: dict[str, str] = {}
+    try:
+        api_folders, api_doc_folders = client.get_doc_folder_mapping()
+        logger.info(f"Retrieved {len(api_folders)} folders from API, {len(api_doc_folders)} doc-folder mappings")
+    except APIError as e:
+        logger.warning(f"Failed to fetch folder data from API (continuing without folders): {e}")
+    except Exception as e:
+        logger.warning(f"Error fetching folder data: {e}")
+
+    # 4. Read cache for transcripts only (folders now come from API)
+    # If cache read fails, continue with empty cache (still sync API docs)
     cache_file = Path(cache_path) if cache_path else get_default_cache_path()
+    cache_data = None
     try:
         cache_data = read_cache(cache_file)
     except Exception as e:
-        return ExportResult(success=False, error_message=f"Failed to read cache file: {e}")
+        logger.warning(f"Failed to read cache file (continuing without transcripts): {e}")
 
-    logger.info(f"Loaded cache: {len(cache_data.transcripts)} transcripts, {len(cache_data.folders)} folders")
+    # If no cache data, create empty structure
+    if cache_data is None:
+        from granola.cache.reader import CacheData
+        cache_data = CacheData(
+            documents={},
+            transcripts={},
+            folders={},
+            doc_folders={},
+            shared_documents={},
+        )
+
+    logger.info(f"Loaded cache: {len(cache_data.transcripts)} transcripts")
+
+    # Helper to get folder names - prefer API data, fall back to cache
+    def get_folder_names(doc_id: str) -> list[str]:
+        """Get folder names for a document, preferring API over cache."""
+        if doc_id in api_doc_folders:
+            return api_doc_folders[doc_id]
+        return cache_data.get_folder_names(doc_id)
 
     # 5. Build export documents
     all_doc_ids: set[str] = set()
     export_docs: list[ExportDoc] = []
 
     for api_doc in api_docs:
-        folders = cache_data.get_folder_names(api_doc.id)
+        folders = get_folder_names(api_doc.id)
 
         if excluded_set and any(f in excluded_set for f in folders):
             continue
@@ -171,7 +226,7 @@ def run_export(
         if shared_doc.id in all_doc_ids:
             continue
 
-        folders = cache_data.get_folder_names(shared_doc.id)
+        folders = get_folder_names(shared_doc.id)
         if excluded_set and any(f in excluded_set for f in folders):
             continue
 
@@ -224,14 +279,16 @@ def run_export(
             transcript_content=transcript_text,
         ))
 
-    # 6. Sync to filesystem
-    output_dir = Path(output_folder)
-    sync_writer = SyncWriter(output_dir, logger=logger)
+    # 6. Sync to filesystem (passing exclusions to delete excluded folders)
+    sync_writer = SyncWriter(output_dir, logger=logger, excluded_folders=list(excluded_set))
     try:
         stats, results = sync_writer.sync(export_docs, all_doc_ids)
     except Exception as e:
         import traceback
         return ExportResult(success=False, error_message=f"Sync failed: {e}\n{traceback.format_exc()}")
+
+    # 6b. Save sync config to sync folder (so exclusions sync across computers)
+    save_sync_config(output_dir, sync_config)
 
     # 7. Dispatch webhooks
     webhook_summary = ""
@@ -270,6 +327,7 @@ def run_export(
         deleted=stats.deleted,
         skipped=stats.skipped,
         webhook_summary=webhook_summary,
+        effective_excluded_folders=list(excluded_set),
     )
 
 
@@ -317,8 +375,21 @@ def export_cmd(
     Use --exclude-folder to skip documents in specific folders. Documents in an excluded
     folder will be skipped entirely, even if they also belong to other folders.
     """
-    excluded_folders = set(exclude_folder) if exclude_folder else set()
     from granola.cli.main import state, resolve_path
+
+    # 0. Resolve output directory early (needed for sync config)
+    output_dir = resolve_path(output) if output else default_export_output()
+
+    # 0b. Load and merge exclusions from sync folder config
+    # This allows exclusions to sync across computers
+    cli_excluded = set(exclude_folder) if exclude_folder else set()
+    effective_excluded, sync_config = get_effective_exclusions(
+        output_dir,
+        list(cli_excluded),
+        None,  # CLI doesn't track timestamp
+    )
+    excluded_folders = set(effective_excluded)
+    state.logger.info(f"Effective excluded folders: {effective_excluded}")
 
     # 1. Get supabase path (command option > global state)
     supabase_path = resolve_path(supabase) if supabase else state.supabase
@@ -354,28 +425,51 @@ def export_cmd(
 
     state.logger.info(f"Retrieved {len(api_docs)} documents from API")
 
-    # 3. Read cache for transcripts and folders
+    # 3b. Fetch folder assignments from API
+    api_doc_folders: dict[str, list[str]] = {}
+    api_folders: dict[str, str] = {}
+    try:
+        api_folders, api_doc_folders = client.get_doc_folder_mapping()
+        state.logger.info(f"Retrieved {len(api_folders)} folders from API, {len(api_doc_folders)} doc-folder mappings")
+    except APIError as e:
+        state.logger.warning(f"Failed to fetch folder data from API (continuing without folders): {e}")
+
+    # 3c. Read cache for transcripts only (folders now come from API)
     cache_path = resolve_path(cache) if cache else get_default_cache_path()
 
     state.logger.info(f"Reading cache file from {cache_path}")
+    cache_data = None
     try:
         cache_data = read_cache(cache_path)
     except Exception as e:
-        console.print(f"[red]Error:[/red] Failed to read cache file: {e}")
-        raise typer.Exit(1)
+        state.logger.warning(f"Failed to read cache file (continuing without transcripts): {e}")
 
-    state.logger.info(
-        f"Loaded cache data: {len(cache_data.transcripts)} transcripts, "
-        f"{len(cache_data.folders)} folders"
-    )
+    # If no cache data, create empty structure
+    if cache_data is None:
+        from granola.cache.reader import CacheData
+        cache_data = CacheData(
+            documents={},
+            transcripts={},
+            folders={},
+            doc_folders={},
+            shared_documents={},
+        )
+
+    state.logger.info(f"Loaded cache data: {len(cache_data.transcripts)} transcripts")
+
+    # Helper to get folder names - prefer API data, fall back to cache
+    def get_folder_names(doc_id: str) -> list[str]:
+        if doc_id in api_doc_folders:
+            return api_doc_folders[doc_id]
+        return cache_data.get_folder_names(doc_id)
 
     # 4. Build export documents by merging API docs with cache data
     all_doc_ids: set[str] = set()
     export_docs: list[ExportDoc] = []
 
     for api_doc in api_docs:
-        # Get folder names for this document
-        folders = cache_data.get_folder_names(api_doc.id)
+        # Get folder names for this document (from API, not cache)
+        folders = get_folder_names(api_doc.id)
 
         # Skip if document is in any excluded folder
         if excluded_folders and any(f in excluded_folders for f in folders):
@@ -449,8 +543,8 @@ def export_cmd(
         if shared_doc.id in all_doc_ids:
             continue
 
-        # Get folder names for this document
-        folders = cache_data.get_folder_names(shared_doc.id)
+        # Get folder names for this document (from API, not cache)
+        folders = get_folder_names(shared_doc.id)
 
         # Skip if document is in any excluded folder
         if excluded_folders and any(f in excluded_folders for f in folders):
@@ -517,19 +611,20 @@ def export_cmd(
             transcript_content=transcript_text,
         ))
 
-    # 5. Resolve output directory
-    output_dir = resolve_path(output) if output else default_export_output()
-
+    # 5. Sync to output directory
     console.print(f"Syncing {len(export_docs)} documents to {output_dir}...")
     state.logger.info(f"Starting sync to {output_dir}, {len(export_docs)} documents")
 
-    # 6. Sync to filesystem
-    sync_writer = SyncWriter(output_dir, logger=state.logger)
+    # 6. Sync to filesystem (passing exclusions to delete excluded folders)
+    sync_writer = SyncWriter(output_dir, logger=state.logger, excluded_folders=list(excluded_folders))
     try:
         stats, results = sync_writer.sync(export_docs, all_doc_ids)
     except Exception as e:
         console.print(f"[red]Error:[/red] Sync failed: {e}")
         raise typer.Exit(1)
+
+    # 6b. Save sync config to sync folder
+    save_sync_config(output_dir, sync_config)
 
     # 7. Print results
     console.print(
