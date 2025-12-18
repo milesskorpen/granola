@@ -1,5 +1,8 @@
 """Granola API client."""
 
+import ssl
+
+import certifi
 import httpx
 
 from granola.api.models import Document, GranolaResponse
@@ -8,6 +11,12 @@ from granola.api.models import Document, GranolaResponse
 USER_AGENT = "Granola/5.354.0"
 X_CLIENT_VERSION = "5.354.0"
 API_URL = "https://api.granola.ai/v2/get-documents"
+
+
+def _get_ssl_context() -> ssl.SSLContext:
+    """Create an SSL context using certifi's CA bundle."""
+    ctx = ssl.create_default_context(cafile=certifi.where())
+    return ctx
 
 
 class APIError(Exception):
@@ -49,7 +58,7 @@ class GranolaClient:
         offset = 0
         limit = 100
 
-        with httpx.Client(timeout=self.timeout) as client:
+        with httpx.Client(timeout=self.timeout, verify=_get_ssl_context()) as client:
             while True:
                 try:
                     response = client.post(

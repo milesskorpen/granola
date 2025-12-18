@@ -41,9 +41,21 @@ class Settings:
     last_sync_status: str = "never"  # "success", "error", "never"
     last_sync_message: str = ""
 
+    # Sync stats
+    last_sync_added: int = 0
+    last_sync_updated: int = 0
+    last_sync_moved: int = 0
+    last_sync_deleted: int = 0
+    last_sync_skipped: int = 0
+
     # App settings
     start_at_login: bool = False
-    show_notifications: bool = True
+    show_notifications: bool = True  # Legacy, use notification_level instead
+    notification_level: str = "verbose"  # "verbose", "errors", "none"
+
+    # Webhooks configuration
+    # Each dict: {"name": str, "url": str, "method": str, "enabled": bool}
+    webhooks: list[dict] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         """Set default paths if not provided."""

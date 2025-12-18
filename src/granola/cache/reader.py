@@ -95,7 +95,7 @@ def read_cache(cache_path: Path) -> CacheData:
         FileNotFoundError: If the cache file doesn't exist.
         json.JSONDecodeError: If the JSON is invalid.
     """
-    content = cache_path.read_text()
+    content = cache_path.read_text(encoding="utf-8")
 
     # Parse outer JSON
     outer = json.loads(content)

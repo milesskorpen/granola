@@ -17,8 +17,12 @@ class ExportDoc:
     title: str
     created_at: datetime
     updated_at: datetime
-    content: str  # formatted content
+    content: str  # formatted combined content
     folders: list[str] = field(default_factory=list)  # folder names (empty = root)
+    has_notes: bool = False  # whether document has notes content (not just transcript)
+    has_transcript: bool = False  # whether document has transcript content
+    notes_content: str = ""  # just the notes section (for webhooks)
+    transcript_content: str = ""  # just the transcript section (for webhooks)
 
 
 @dataclass
@@ -30,6 +34,15 @@ class SyncStats:
     moved: int = 0
     deleted: int = 0
     skipped: int = 0
+
+
+@dataclass
+class SyncResult:
+    """Result of syncing a single document."""
+
+    doc: ExportDoc
+    action: str  # "added" | "updated" | "skipped" | "moved" | "deleted"
+    file_path: Path
 
 
 class SyncWriter:
@@ -45,7 +58,9 @@ class SyncWriter:
         self.output_dir = output_dir
         self.logger = logger or logging.getLogger(__name__)
 
-    def sync(self, docs: list[ExportDoc], all_doc_ids: set[str]) -> SyncStats:
+    def sync(
+        self, docs: list[ExportDoc], all_doc_ids: set[str]
+    ) -> tuple[SyncStats, list[SyncResult]]:
         """Synchronize documents to the output directory with folder structure.
 
         Handles adding, updating, moving, and deleting files as needed.
@@ -55,9 +70,10 @@ class SyncWriter:
             all_doc_ids: Set of all valid document IDs (for orphan detection).
 
         Returns:
-            Statistics about the sync operation.
+            Tuple of (statistics, list of per-document results).
         """
         stats = SyncStats()
+        results: list[SyncResult] = []
 
         # Create output directory if it doesn't exist
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -67,12 +83,13 @@ class SyncWriter:
 
         # Step 2: Process each document
         for doc in docs:
-            doc_stats = self._process_document(doc, existing_files)
+            doc_stats, doc_results = self._process_document(doc, existing_files)
             stats.added += doc_stats.added
             stats.updated += doc_stats.updated
             stats.moved += doc_stats.moved
             stats.deleted += doc_stats.deleted
             stats.skipped += doc_stats.skipped
+            results.extend(doc_results)
 
         # Step 3: Delete orphaned files (files whose doc IDs are not in all_doc_ids)
         for doc_id, paths in existing_files.items():
@@ -89,7 +106,7 @@ class SyncWriter:
         # Step 4: Clean up empty folders
         self._clean_empty_folders()
 
-        return stats
+        return stats, results
 
     def _scan_existing_files(self) -> dict[str, list[Path]]:
         """Walk the output directory and build a map of doc ID -> file paths.
@@ -110,12 +127,16 @@ class SyncWriter:
 
     def _process_document(
         self, doc: ExportDoc, existing_files: dict[str, list[Path]]
-    ) -> SyncStats:
+    ) -> tuple[SyncStats, list[SyncResult]]:
         """Handle a single document: writes to appropriate folders.
 
         Removes from folders it no longer belongs to.
+
+        Returns:
+            Tuple of (stats, list of results for each file written).
         """
         stats = SyncStats()
+        results: list[SyncResult] = []
 
         filename = self._generate_filename(doc.title, doc.id, doc.created_at)
 
@@ -141,13 +162,16 @@ class SyncWriter:
                     target_path.write_text(doc.content)
                     self.logger.debug(f"Updated: {target_path}")
                     stats.updated += 1
+                    results.append(SyncResult(doc=doc, action="updated", file_path=target_path))
                 else:
                     stats.skipped += 1
+                    # Don't add skipped to results - only interested in changes
             else:
                 # New path - write the file
                 target_path.write_text(doc.content)
                 self.logger.debug(f"Added: {target_path}")
                 stats.added += 1
+                results.append(SyncResult(doc=doc, action="added", file_path=target_path))
 
         # Remove files from folders they no longer belong to
         for existing_path in existing_paths:
@@ -163,7 +187,7 @@ class SyncWriter:
         if short_id in existing_files:
             del existing_files[short_id]
 
-        return stats
+        return stats, results
 
     def _get_target_paths(self, folders: list[str], filename: str) -> list[Path]:
         """Return the full paths where the document should be written."""

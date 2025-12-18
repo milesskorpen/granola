@@ -11,7 +11,7 @@
 ```
 
 [![Python Version](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/)
-[![License](https://img.shields.io/github/license/theantichris/granola)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 Automatically sync your [Granola](https://granola.ai) meeting notes to a local folder. Perfect for backing up to Google Drive, Dropbox, or any folder on your Mac.
 
@@ -37,7 +37,7 @@ Automatically sync your [Granola](https://granola.ai) meeting notes to a local f
 brew install python@3.12
 
 # Clone and install
-git clone https://github.com/theantichris/granola.git
+git clone https://github.com/milesskorpen/granola.git
 cd granola
 pip3 install -e .
 ```
@@ -198,6 +198,26 @@ cat ~/.config/granola/sync.error.log
 Toggle "Start at Login" off and on again, or check:
 ```bash
 launchctl list | grep granola
+
+## Build a macOS App (Distributable)
+
+Create a standalone `.app` that bundles Python and all dependencies (no Python required on the target Mac):
+
+```bash
+# One-time: ensure a clean environment
+chmod +x scripts/build_macos_app.sh
+
+# Build the app bundle
+scripts/build_macos_app.sh
+
+# Output
+open dist/Granola\ Sync.app
+```
+
+Notes:
+- The app runs as a menu bar app (no Dock icon) via `LSUIElement`.
+- To rebrand, set an icon by adding an `.icns` file and updating `iconfile` in `setup.py`.
+- For wider distribution, consider codesigning and notarization (Developer ID). I can add a signing/notarization script on request.
 ```
 
 ## Uninstalling
@@ -246,7 +266,7 @@ granola/
 ### Development Setup
 
 ```bash
-git clone https://github.com/theantichris/granola.git
+git clone https://github.com/milesskorpen/granola.git
 cd granola
 pip install -e ".[dev]"
 ```
@@ -277,6 +297,7 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 ## Acknowledgments
 
+- [Christopher Lamm (theantichris)](https://github.com/theantichris/granola) - Original Go implementation this project is based on
 - [Granola](https://granola.ai) - The note-taking app this syncs from
 - [rumps](https://github.com/jaredks/rumps) - Menu bar framework
 - [Typer](https://typer.tiangolo.com/) - CLI framework

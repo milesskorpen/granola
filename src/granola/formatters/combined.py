@@ -77,6 +77,27 @@ def format_combined(
     return "\n".join(lines)
 
 
+def format_transcript(segments: list[TranscriptSegment]) -> str:
+    """Format transcript segments into plain text.
+
+    Args:
+        segments: Transcript segments.
+
+    Returns:
+        Formatted transcript string.
+    """
+    if not segments:
+        return ""
+
+    lines: list[str] = []
+    for segment in segments:
+        timestamp = _parse_timestamp(segment.start_timestamp)
+        speaker = "You" if segment.source == "microphone" else "System"
+        lines.append(f"[{timestamp}] {speaker}: {segment.text}")
+
+    return "\n".join(lines)
+
+
 def _parse_timestamp(timestamp: str) -> str:
     """Convert ISO 8601 timestamp to HH:MM:SS format.
 

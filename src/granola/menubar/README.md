@@ -25,7 +25,7 @@ brew install python@3.12
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/granola.git
+git clone https://github.com/milesskorpen/granola.git
 cd granola
 
 # Install the package
@@ -48,6 +48,40 @@ granola-menubar
 ```
 
 A 🥣 icon will appear in your menu bar.
+
+## Packaging (macOS .app)
+
+Create a standalone macOS app bundle using py2app.
+
+1. Ensure Xcode Command Line Tools are installed:
+   ```bash
+   xcode-select --install
+   ```
+2. Generate the app icon and build the app:
+   ```bash
+   chmod +x scripts/make_icns.sh scripts/build_macos_app.sh
+   ./scripts/build_macos_app.sh
+   ```
+   This writes `macos/Granola.icns` and builds `dist/Granola Sync.app`.
+3. Run it:
+   ```bash
+   open "dist/Granola Sync.app"
+   ```
+
+### Distribute
+
+- Zip:
+  ```bash
+  (cd dist && zip -r GranolaSync.zip "Granola Sync.app")
+  ```
+- DMG:
+  ```bash
+  hdiutil create -volname "Granola Sync" -srcfolder "dist/Granola Sync.app" -ov -format UDZO GranolaSync.dmg
+  ```
+- Optional codesign:
+  ```bash
+  codesign --force --deep --sign "Developer ID Application: Your Name (TEAMID)" "dist/Granola Sync.app"
+  ```
 
 ## First-Time Setup
 

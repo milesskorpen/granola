@@ -6,7 +6,8 @@ readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.11"
 authors = [
-    {name = "theantichris"}
+    {name = "Christopher Lamm"},
+    {name = "Miles Skorpen"}
 ]
 keywords = ["granola", "notes", "transcripts", "cli", "export"]
 classifiers = [
@@ -56,6 +57,7 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/granola"]
+force-include = {"app_icon.png" = "granola/menubar/assets/app_icon.png"}
 
 [tool.ruff]
 line-length = 100

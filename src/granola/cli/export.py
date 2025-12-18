@@ -1,5 +1,8 @@
 """Combined export command with folder structure."""
 
+import json
+import logging
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Annotated, Optional
@@ -12,11 +15,262 @@ from granola.api.client import APIError, GranolaClient
 from granola.api.models import Document
 from granola.api.models import ProseMirrorDoc
 from granola.cache.reader import SharedDocument, get_default_cache_path, read_cache
-from granola.formatters.combined import format_combined
+from granola.formatters.combined import format_combined, format_transcript
 from granola.prosemirror.converter import to_markdown
-from granola.writers.sync_writer import ExportDoc, SyncWriter
+from granola.webhooks import WebhookDispatcher, WebhookPayload
+from granola.writers.sync_writer import ExportDoc, SyncResult, SyncStats, SyncWriter
 
 console = Console()
+
+
+@dataclass
+class ExportResult:
+    """Result of a programmatic export operation."""
+
+    success: bool
+    added: int = 0
+    updated: int = 0
+    moved: int = 0
+    deleted: int = 0
+    skipped: int = 0
+    error_message: str = ""
+    webhook_summary: str = ""
+
+
+def run_export(
+    output_folder: str,
+    supabase_path: str | None = None,
+    cache_path: str | None = None,
+    excluded_folders: list[str] | None = None,
+    webhook_configs: list[dict] | None = None,
+    timeout: int = 120,
+    logger: logging.Logger | None = None,
+) -> ExportResult:
+    """Run export programmatically (for use by menubar app).
+
+    Args:
+        output_folder: Directory to export files to.
+        supabase_path: Path to supabase.json file.
+        cache_path: Path to Granola cache file.
+        excluded_folders: List of folder names to exclude.
+        webhook_configs: List of webhook configuration dicts.
+        timeout: HTTP timeout in seconds.
+        logger: Optional logger for debug output.
+
+    Returns:
+        ExportResult with stats and any error information.
+    """
+    logger = logger or logging.getLogger(__name__)
+    excluded_set = set(excluded_folders) if excluded_folders else set()
+
+    # 1. Resolve supabase path
+    if not supabase_path:
+        # Try default location
+        default_supabase = Path.home() / "Library" / "Application Support" / "Granola" / "supabase.json"
+        if default_supabase.exists():
+            supabase_path = str(default_supabase)
+        else:
+            return ExportResult(success=False, error_message="supabase.json path not set")
+
+    supabase_file = Path(supabase_path)
+    if not supabase_file.exists():
+        return ExportResult(success=False, error_message=f"supabase.json not found at {supabase_path}")
+
+    # 2. Get access token
+    try:
+        access_token = get_access_token(supabase_file)
+    except (AuthError, FileNotFoundError) as e:
+        return ExportResult(success=False, error_message=f"Failed to read supabase.json: {e}")
+
+    # 3. Fetch documents from API
+    try:
+        client = GranolaClient(access_token, timeout=timeout)
+        api_docs = client.get_documents()
+    except APIError as e:
+        return ExportResult(success=False, error_message=f"API request failed: {e}")
+    except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        # Write full traceback to log file for debugging
+        log_path = Path.home() / ".config" / "granola" / "error.log"
+        log_path.write_text(f"Error fetching docs: {e}\n\n{tb}")
+        return ExportResult(success=False, error_message=f"Unexpected error: {e} (see ~/.config/granola/error.log)")
+
+    logger.info(f"Retrieved {len(api_docs)} documents from API")
+
+    # 4. Read cache for transcripts and folders
+    cache_file = Path(cache_path) if cache_path else get_default_cache_path()
+    try:
+        cache_data = read_cache(cache_file)
+    except Exception as e:
+        return ExportResult(success=False, error_message=f"Failed to read cache file: {e}")
+
+    logger.info(f"Loaded cache: {len(cache_data.transcripts)} transcripts, {len(cache_data.folders)} folders")
+
+    # 5. Build export documents
+    all_doc_ids: set[str] = set()
+    export_docs: list[ExportDoc] = []
+
+    for api_doc in api_docs:
+        folders = cache_data.get_folder_names(api_doc.id)
+
+        if excluded_set and any(f in excluded_set for f in folders):
+            continue
+
+        all_doc_ids.add(api_doc.id)
+        segments = cache_data.transcripts.get(api_doc.id, [])
+        notes_content = _get_notes_content(api_doc)
+
+        has_notes = notes_content and notes_content.strip()
+        has_transcript = len(segments) > 0
+        if not has_notes and not has_transcript:
+            continue
+
+        content = format_combined(
+            title=api_doc.title,
+            doc_id=api_doc.id,
+            created_at=api_doc.created_at,
+            updated_at=api_doc.updated_at,
+            notes_content=notes_content,
+            segments=segments,
+            folders=folders,
+        )
+        transcript_text = format_transcript(segments) if segments else ""
+
+        try:
+            ts = api_doc.created_at.replace("Z", "+00:00")
+            created_at = datetime.fromisoformat(ts)
+            if created_at.tzinfo is None:
+                created_at = created_at.replace(tzinfo=timezone.utc)
+        except ValueError:
+            created_at = datetime.now(timezone.utc)
+
+        try:
+            ts = api_doc.updated_at.replace("Z", "+00:00")
+            updated_at = datetime.fromisoformat(ts)
+            if updated_at.tzinfo is None:
+                updated_at = updated_at.replace(tzinfo=timezone.utc)
+        except ValueError:
+            updated_at = datetime.now(timezone.utc)
+
+        export_docs.append(ExportDoc(
+            id=api_doc.id,
+            title=api_doc.title,
+            created_at=created_at,
+            updated_at=updated_at,
+            content=content,
+            folders=folders,
+            has_notes=has_notes,
+            has_transcript=has_transcript,
+            notes_content=notes_content or "",
+            transcript_content=transcript_text,
+        ))
+
+    # 5b. Process shared documents from cache
+    for shared_doc in cache_data.shared_documents.values():
+        if shared_doc.id in all_doc_ids:
+            continue
+
+        folders = cache_data.get_folder_names(shared_doc.id)
+        if excluded_set and any(f in excluded_set for f in folders):
+            continue
+
+        all_doc_ids.add(shared_doc.id)
+        segments = cache_data.transcripts.get(shared_doc.id, [])
+        notes_content = _get_shared_notes_content(shared_doc)
+
+        has_notes = notes_content and notes_content.strip()
+        has_transcript = len(segments) > 0
+        if not has_notes and not has_transcript:
+            continue
+
+        content = format_combined(
+            title=shared_doc.title,
+            doc_id=shared_doc.id,
+            created_at=shared_doc.created_at,
+            updated_at=shared_doc.updated_at,
+            notes_content=notes_content,
+            segments=segments,
+            folders=folders,
+        )
+        transcript_text = format_transcript(segments) if segments else ""
+
+        try:
+            ts = shared_doc.created_at.replace("Z", "+00:00")
+            created_at = datetime.fromisoformat(ts)
+            if created_at.tzinfo is None:
+                created_at = created_at.replace(tzinfo=timezone.utc)
+        except ValueError:
+            created_at = datetime.now(timezone.utc)
+
+        try:
+            ts = shared_doc.updated_at.replace("Z", "+00:00")
+            updated_at = datetime.fromisoformat(ts)
+            if updated_at.tzinfo is None:
+                updated_at = updated_at.replace(tzinfo=timezone.utc)
+        except ValueError:
+            updated_at = datetime.now(timezone.utc)
+
+        export_docs.append(ExportDoc(
+            id=shared_doc.id,
+            title=shared_doc.title,
+            created_at=created_at,
+            updated_at=updated_at,
+            content=content,
+            folders=folders,
+            has_notes=has_notes,
+            has_transcript=has_transcript,
+            notes_content=notes_content or "",
+            transcript_content=transcript_text,
+        ))
+
+    # 6. Sync to filesystem
+    output_dir = Path(output_folder)
+    sync_writer = SyncWriter(output_dir, logger=logger)
+    try:
+        stats, results = sync_writer.sync(export_docs, all_doc_ids)
+    except Exception as e:
+        import traceback
+        return ExportResult(success=False, error_message=f"Sync failed: {e}\n{traceback.format_exc()}")
+
+    # 7. Dispatch webhooks
+    webhook_summary = ""
+    if webhook_configs:
+        dispatcher = WebhookDispatcher(webhook_configs, logger=logger)
+        webhook_results = []
+
+        for result in results:
+            if not result.doc.has_notes:
+                continue
+
+            payload = WebhookPayload.create(
+                event=f"document.{result.action}",
+                doc_id=result.doc.id,
+                title=result.doc.title or "",
+                created_at=result.doc.created_at.isoformat(),
+                updated_at=result.doc.updated_at.isoformat(),
+                folders=result.doc.folders,
+                file_path=str(result.file_path),
+                markdown_content=result.doc.content,
+                notes_content=result.doc.notes_content,
+                transcript_content=result.doc.transcript_content,
+                has_notes=result.doc.has_notes,
+                has_transcript=result.doc.has_transcript,
+            )
+            webhook_results.extend(dispatcher.dispatch(payload))
+
+        if webhook_results:
+            webhook_summary = dispatcher.get_summary(webhook_results)
+
+    return ExportResult(
+        success=True,
+        added=stats.added,
+        updated=stats.updated,
+        moved=stats.moved,
+        deleted=stats.deleted,
+        skipped=stats.skipped,
+        webhook_summary=webhook_summary,
+    )
 
 
 def default_export_output() -> Path:
@@ -44,6 +298,10 @@ def export_cmd(
     supabase: Annotated[
         Optional[str],
         typer.Option("--supabase", help="Path to supabase.json file"),
+    ] = None,
+    webhook: Annotated[
+        Optional[list[str]],
+        typer.Option("--webhook", help="JSON-encoded webhook config (can be used multiple times)"),
     ] = None,
 ) -> None:
     """Export combined notes and transcripts with folder structure.
@@ -150,6 +408,9 @@ def export_cmd(
             folders=folders,
         )
 
+        # Format transcript separately for webhooks
+        transcript_text = format_transcript(segments) if segments else ""
+
         # Parse created_at timestamp
         try:
             ts = api_doc.created_at.replace("Z", "+00:00")
@@ -175,6 +436,10 @@ def export_cmd(
             updated_at=updated_at,
             content=content,
             folders=folders,
+            has_notes=has_notes,
+            has_transcript=has_transcript,
+            notes_content=notes_content or "",
+            transcript_content=transcript_text,
         ))
 
     # 4b. Process shared documents from cache
@@ -218,6 +483,9 @@ def export_cmd(
             folders=folders,
         )
 
+        # Format transcript separately for webhooks
+        transcript_text = format_transcript(segments) if segments else ""
+
         # Parse created_at timestamp
         try:
             ts = shared_doc.created_at.replace("Z", "+00:00")
@@ -243,6 +511,10 @@ def export_cmd(
             updated_at=updated_at,
             content=content,
             folders=folders,
+            has_notes=has_notes,
+            has_transcript=has_transcript,
+            notes_content=notes_content or "",
+            transcript_content=transcript_text,
         ))
 
     # 5. Resolve output directory
@@ -254,7 +526,7 @@ def export_cmd(
     # 6. Sync to filesystem
     sync_writer = SyncWriter(output_dir, logger=state.logger)
     try:
-        stats = sync_writer.sync(export_docs, all_doc_ids)
+        stats, results = sync_writer.sync(export_docs, all_doc_ids)
     except Exception as e:
         console.print(f"[red]Error:[/red] Sync failed: {e}")
         raise typer.Exit(1)
@@ -269,6 +541,52 @@ def export_cmd(
         f"Export completed: added={stats.added}, updated={stats.updated}, "
         f"moved={stats.moved}, deleted={stats.deleted}, skipped={stats.skipped}"
     )
+
+    # 8. Dispatch webhooks for documents with notes that were added or updated
+    webhook_configs = []
+    if webhook:
+        for w in webhook:
+            try:
+                webhook_configs.append(json.loads(w))
+            except json.JSONDecodeError as e:
+                state.logger.warning(f"Invalid webhook config: {e}")
+
+    if webhook_configs:
+        dispatcher = WebhookDispatcher(webhook_configs, logger=state.logger)
+        webhook_results = []
+
+        for result in results:
+            # Only send webhooks for documents with notes content
+            if not result.doc.has_notes:
+                state.logger.debug(
+                    f"Skipping webhook for '{result.doc.title}' - no notes content"
+                )
+                continue
+
+            # Build webhook payload
+            payload = WebhookPayload.create(
+                event=f"document.{result.action}",
+                doc_id=result.doc.id,
+                title=result.doc.title or "",
+                created_at=result.doc.created_at.isoformat(),
+                updated_at=result.doc.updated_at.isoformat(),
+                folders=result.doc.folders,
+                file_path=str(result.file_path),
+                markdown_content=result.doc.content,
+                notes_content=result.doc.notes_content,
+                transcript_content=result.doc.transcript_content,
+                has_notes=result.doc.has_notes,
+                has_transcript=result.doc.has_transcript,
+            )
+
+            # Dispatch to all configured webhooks
+            webhook_results.extend(dispatcher.dispatch(payload))
+
+        # Print webhook summary
+        if webhook_results:
+            summary = dispatcher.get_summary(webhook_results)
+            console.print(f"[blue]ℹ[/blue] {summary}")
+            state.logger.info(summary)
 
 
 def _get_notes_content(doc: Document) -> str | None:
